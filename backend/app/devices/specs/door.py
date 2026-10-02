@@ -1,0 +1,24 @@
+"""Door lock: locked/unlocked."""
+
+from typing import Literal
+
+from pydantic import BaseModel
+
+from app.devices.commands import CommandModel
+from app.devices.specs.base import DeviceSpec
+from app.devices.types import DeviceType
+
+
+class DoorLockState(BaseModel):
+    is_locked: bool = True
+
+
+class Lock(CommandModel):
+    action: Literal["lock"] = "lock"
+
+
+class Unlock(CommandModel):
+    action: Literal["unlock"] = "unlock"
+
+
+DOOR_LOCK_SPEC = DeviceSpec(DeviceType.DOOR_LOCK, DoorLockState, [Lock, Unlock])
