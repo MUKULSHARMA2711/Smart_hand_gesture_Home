@@ -6,7 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.devices.base import DeviceSnapshot
 from app.devices.commands import DeviceCommand
+from app.domain.intents import Intent
 from app.events.models import CommandSource, DeviceEvent
+from app.gestures.models import Gesture, GestureCommand, GestureEvent
 
 
 class CommandRequest(BaseModel):
@@ -31,6 +33,49 @@ class CommandRequest(BaseModel):
 class CommandResponse(BaseModel):
     event: DeviceEvent
     device: DeviceSnapshot
+
+
+class GestureCommandRequest(BaseModel):
+    """A gesture recognised on the client. Only the result is sent, never video frames."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "gesture": "THUMBS_UP",
+                    "intent": "TURN_ON",
+                    "confidence": 0.96,
+                    "target_device_id": "light_living_room",
+                }
+            ]
+        },
+    )
+
+    gesture: Gesture
+    intent: Intent
+    confidence: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    target_device_id: str = Field(min_length=1, max_length=64)
+
+    def to_command(self) -> GestureCommand:
+        return GestureCommand(**self.model_dump())
+
+
+class GestureCommandResponse(BaseModel):
+    gesture_event: GestureEvent
+    device_event: DeviceEvent | None
+    device: DeviceSnapshot
+
+
+class GestureMapping(BaseModel):
+    gesture: Gesture
+    intent: Intent
+
+
+class GestureConfigResponse(BaseModel):
+    confidence_threshold: float
+    blocked_actions: list[str]
+    gestures: list[GestureMapping]
 
 
 class ErrorDetail(BaseModel):

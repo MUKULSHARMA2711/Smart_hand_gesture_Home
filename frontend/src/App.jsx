@@ -1,12 +1,29 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { API_BASE_URL } from './api/client'
-import { DeviceCard } from './components/DeviceCard'
-import { EnvironmentPanel } from './components/EnvironmentPanel'
-import { EventLog } from './components/EventLog'
 import { useHomeDashboard } from './hooks/useHomeDashboard'
 import { formatTime } from './lib/format'
+import { DashboardPage } from './pages/DashboardPage'
 
 const COMMAND_ERROR_TIMEOUT_MS = 6000
+
+// Loaded on demand so the dashboard never downloads MediaPipe.
+const GesturePage = lazy(() => import('./pages/GesturePage').then((module) => ({ default: module.GesturePage })))
+
+const ROUTES = [
+  { id: 'dashboard', hash: '#/', label: 'Dashboard', subtitle: 'Virtual IoT dashboard · simulated devices' },
+  { id: 'gestures', hash: '#/gestures', label: 'Gesture control', subtitle: 'Hand gesture control · runs in your browser' },
+]
+
+function useHashRoute() {
+  const read = () => ROUTES.find((route) => route.hash === window.location.hash) ?? ROUTES[0]
+  const [route, setRoute] = useState(read)
+  useEffect(() => {
+    const onHashChange = () => setRoute(read())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  return route
+}
 
 function ConnectionIndicator({ connected, updatedAt }) {
   return (
@@ -15,6 +32,30 @@ function ConnectionIndicator({ connected, updatedAt }) {
       <span>{connected ? 'Live' : 'Disconnected'}</span>
       {updatedAt && <span className="hidden sm:inline">· updated {formatTime(updatedAt)}</span>}
     </div>
+  )
+}
+
+function Navigation({ current }) {
+  return (
+    <nav aria-label="Main" className="mx-auto flex max-w-6xl gap-1 px-4">
+      {ROUTES.map((route) => {
+        const active = route.id === current.id
+        return (
+          <a
+            key={route.id}
+            href={route.hash}
+            aria-current={active ? 'page' : undefined}
+            className={`border-b-2 px-3 pt-1 pb-2.5 text-sm font-medium transition-colors ${
+              active
+                ? 'border-indigo-600 text-slate-900 dark:border-indigo-400 dark:text-white'
+                : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            {route.label}
+          </a>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -39,20 +80,21 @@ function CommandErrorToast({ message, onDismiss }) {
 }
 
 export default function App() {
-  const { home, events, connectionError, commandError, clearCommandError, pendingDeviceId, sendCommand } =
-    useHomeDashboard()
-  const deviceNames = Object.fromEntries((home?.devices ?? []).map((device) => [device.id, device.name]))
+  const route = useHashRoute()
+  const dashboard = useHomeDashboard()
+  const { home, connectionError, commandError, clearCommandError } = dashboard
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
           <div>
             <h1 className="text-lg font-semibold">IntelliHome</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Virtual IoT dashboard · simulated devices</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{route.subtitle}</p>
           </div>
           <ConnectionIndicator connected={!connectionError && !!home} updatedAt={home?.timestamp} />
         </div>
+        <Navigation current={route} />
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-6">
@@ -68,28 +110,18 @@ export default function App() {
 
         {!home && !connectionError && <p className="text-slate-500">Loading home state…</p>}
 
-        {home && (
-          <>
-            <EnvironmentPanel environment={home.environment} energy={home.energy} />
-
-            <section aria-labelledby="devices-heading">
-              <h2 id="devices-heading" className="mb-3 text-sm font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
-                Devices
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {home.devices.map((device) => (
-                  <DeviceCard
-                    key={device.id}
-                    device={device}
-                    busy={pendingDeviceId === device.id}
-                    onCommand={(action, value) => sendCommand(device.id, action, value)}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <EventLog events={events} deviceNames={deviceNames} />
-          </>
+        {home && route.id === 'dashboard' && (
+          <DashboardPage
+            home={home}
+            events={dashboard.events}
+            pendingDeviceId={dashboard.pendingDeviceId}
+            sendCommand={dashboard.sendCommand}
+          />
+        )}
+        {home && route.id === 'gestures' && (
+          <Suspense fallback={<p className="text-slate-500">Loading gesture control…</p>}>
+            <GesturePage home={home} refreshHome={dashboard.refresh} />
+          </Suspense>
         )}
       </main>
 

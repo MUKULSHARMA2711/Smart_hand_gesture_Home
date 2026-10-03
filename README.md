@@ -8,12 +8,17 @@ and sensors in memory, and a React dashboard controls them. The device layer is 
 so that real ESP32 hardware can later take the simulator's place without changes to the
 business logic or the (future) AI layer.
 
+* **Day 1:** virtual devices, home state, structured commands, event log and dashboard.
+* **Day 2:** real-time **hand gesture control**. MediaPipe runs in the browser, and
+  recognised gestures become device-agnostic intents that go through the same
+  `CommandService`. See [Gesture control](#gesture-control-day-2).
+
 ```
 smart-ai-home/
-├── backend/      FastAPI service: devices, home state, commands, events   ← Day 1
-├── frontend/     React + Vite + Tailwind dashboard                         ← Day 1
+├── backend/      FastAPI service: devices, home state, commands, events, gestures
+├── frontend/     React + Vite + Tailwind: dashboard + gesture control (MediaPipe)
 ├── ai/           LLM agent (later)
-├── vision/       Gesture recognition / MediaPipe (later)
+├── vision/       Server-side / offline vision work, e.g. training a gesture model (later)
 ├── ml/           Models: occupancy prediction, energy forecasting (later)
 ├── simulation/   Scenario scripts & richer environment simulation (later)
 └── docs/         Design notes
@@ -24,13 +29,16 @@ smart-ai-home/
 ## Architecture
 
 ```
-            React dashboard        (later) AI agent · automations · gestures · MQTT bridge
+     React dashboard · gesture control      (later) AI agent · automations · MQTT bridge
                    │                                 │
                    ▼  HTTP /api/v1                   │  in-process call
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ API layer        app/api/       routing, request/response schemas, error mapping │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ Domain layer     app/domain/    CommandService  ◄── the ONE way to change a device │
+│ Gestures         app/gestures/  GestureService: validate, confidence gate, history │
+│                                   │ intent                                     │
+│ Domain layer     app/domain/    IntentResolver: intent → device command        │
+│                                 CommandService  ◄── the ONE way to change a device │
 │                                 HomeState (devices + sensors + energy)        │
 ├───────────────────────────┬──────────────────────────┬───────────────────────┤
 │ Device abstraction        │ Sensors                  │ Events                │
@@ -49,7 +57,8 @@ smart-ai-home/
 | Layer | Responsibility | Knows about |
 |---|---|---|
 | `api/` | HTTP only: parse requests, call domain services, map errors to status codes | domain, device snapshots |
-| `domain/` | Business rules: execute commands, record events, aggregate home state, meter energy | the `Device`, `SensorProvider` and `EventStore` **abstractions** only |
+| `gestures/` | Gesture vocabulary and gesture → intent mapping, confidence threshold, gesture policy, gesture history | domain intents, `CommandService` |
+| `domain/` | Business rules: execute commands, resolve intents, record events, aggregate home state, meter energy | the `Device`, `SensorProvider` and `EventStore` **abstractions** only |
 | `devices/` | The `Device` contract, the per-type `DeviceSpec`s, the registry, and the factory that picks an implementation | — |
 | `devices/virtual/` | In-memory simulation of each device's firmware | specs |
 | `sensors/` | Environmental readings (temperature, humidity, occupancy, light) | — |
@@ -133,8 +142,14 @@ states), and a fixed sensor seed.
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173  (gesture control: http://localhost:5173/#/gestures)
+npm test           # gesture classifier + stabilizer unit tests (Vitest)
+npm run build      # production build in dist/
 ```
+
+Gesture control needs a webcam and camera permission. Browsers only allow camera access
+on `localhost` or HTTPS. The first start downloads the ~7.8 MB hand model from Google's
+model storage. The WebAssembly runtime is bundled with the app.
 
 The frontend calls `http://localhost:8000/api/v1` by default. To change it, copy
 `frontend/.env.example` to `frontend/.env` and set `VITE_API_BASE_URL`.
@@ -154,6 +169,9 @@ every command it re-fetches state and events immediately.
 | GET | `/api/v1/devices/{device_id}` | One device |
 | POST | `/api/v1/devices/{device_id}/command` | Execute a structured command |
 | GET | `/api/v1/events?limit=50&device_id=…` | Recent events, newest first |
+| GET | `/api/v1/gestures/config` | Gesture → intent mapping, confidence threshold, blocked actions |
+| POST | `/api/v1/gestures/commands` | Execute a recognised gesture on a target device |
+| GET | `/api/v1/gestures/events?limit=50` | Gesture history (every attempt, any outcome), newest first |
 | GET | `/api/v1/health` | Liveness check |
 
 ### Devices and commands
@@ -314,14 +332,138 @@ Proposed topic contract (JSON payloads use the same field names as the API):
 | `home/{device_id}/availability` (LWT) | ESP32 → backend | `online` / `offline` |
 | `home/sensors/{room}` | ESP32 → backend | `{"temperature_c": 26.1, "humidity_pct": 58, ...}` |
 
-The AI agent, automations and gesture control will all call
+Gesture control already calls, and the AI agent and automations will call,
 `CommandService.execute(device_id, command, source=...)`, the same path the dashboard
 uses today. They are therefore validated and logged the same way, whether the device is
 virtual or real.
 
 ---
 
-## Out of scope for Day 1
+## Gesture control (Day 2)
 
-LLM / AI agent, gesture recognition (MediaPipe), machine learning, authentication,
-PostgreSQL, and real MQTT hardware communication.
+```
+Browser                                                     Backend
+───────                                                     ───────
+webcam ─► MediaPipe HandLandmarker ─► 21 hand landmarks
+          (WASM + WebGL, local)              │
+                                             ▼
+                              rule classifier → gesture + confidence
+                                             │
+                              stabilizer (hold ~0.6 s, ≥ threshold,
+                              fire once until released)
+                                             │  {gesture, intent, confidence, target_device_id}
+                                             └──────► POST /api/v1/gestures/commands
+                                                        GestureService
+                                                          validate gesture ↔ intent
+                                                          confidence ≥ threshold
+                                                          IntentResolver: intent + device → command
+                                                          gesture policy (blocked actions)
+                                                        CommandService (source = "gesture")
+                                                        VirtualDevice → DeviceEvent + GestureEvent
+```
+
+**Only the recognition result is sent to the server. Video frames never leave the
+browser.**
+
+### Gestures and intents
+
+Gestures map to **device-agnostic intents**. The gesture layer never names a device or a
+device action. The `IntentResolver` (`app/domain/intents.py`) decides what an intent
+means for the selected device. It looks at the actions the device's spec supports and
+at its current state, never at its class, so voice control or the AI agent can reuse it.
+
+| Gesture | Intent | Light / fan / AC | Door lock |
+|---|---|---|---|
+| 👍 `THUMBS_UP` | `TURN_ON` | `turn_on` | `lock` |
+| ✊ `FIST` | `TURN_OFF` | `turn_off` | `unlock` (blocked by default) |
+| ✋ `OPEN_PALM` | `STOP` | `turn_off` (safe state) | `lock` (safe state) |
+| ☝️ `ONE_FINGER` | `SELECT` | selects the next device; no device command | same |
+| ✌️ `TWO_FINGERS` | `TOGGLE` | `turn_on` ⇄ `turn_off` | `lock` ⇄ `unlock` (unlock blocked) |
+| `NEUTRAL` / `UNKNOWN` | `NONE` | not actionable | — |
+
+`NEUTRAL` means no hand is in view. `UNKNOWN` means a hand is visible but no gesture
+matched.
+
+**Targeting** is explicit for now: the device selected in the UI, or cycled with
+`ONE_FINGER`, is sent as `target_device_id`. AI context reasoning can replace this later
+without touching the gesture layer.
+
+**Safety:** `SMARTHOME_GESTURE_BLOCKED_ACTIONS` defaults to `["unlock"]`, so a misread
+hand pose can never open the front door. Set it to `[]` to allow unlocking by gesture.
+
+### Confidence
+
+* Every result carries `gesture`, `confidence` (0–1) and `intent`.
+* Below the threshold (`SMARTHOME_GESTURE_CONFIDENCE_THRESHOLD`, default **0.75**), the
+  dashboard still shows the gesture and confidence, marked "below threshold", but
+  nothing is sent.
+* The backend enforces the same threshold independently and rejects low-confidence
+  commands with `422 confidence_below_threshold`. The browser reads the threshold from
+  `GET /gestures/config`, so it is defined in one place.
+
+### How MediaPipe runs in the browser
+
+* `frontend/src/gestures/mediapipeRecognizer.js` creates a `HandLandmarker` from
+  `@mediapipe/tasks-vision` in `VIDEO` mode for one hand. It uses the GPU (WebGL)
+  delegate and falls back to CPU if WebGL is unavailable.
+* Vite bundles the WebAssembly runtime (`vision_wasm_internal.{js,wasm}`) and serves it
+  from the app itself, so it always matches the installed package version.
+* `useGestureRecognition` opens the camera with `getUserMedia` and runs a
+  `requestAnimationFrame` loop. Each new video frame goes through `detectForVideo`, the
+  classifier and the stabilizer. Landmarks are drawn on a canvas over the mirrored
+  preview, and React state updates about 10 times per second.
+* The gesture page is lazy-loaded, so the main dashboard never downloads MediaPipe.
+
+### Replacing the classifier
+
+Recognition sits behind a small interface (`frontend/src/gestures/types.js`):
+
+```js
+recognize(video, timestampMs) → { gesture, confidence, landmarks }
+draw(canvas, result)
+```
+
+`ruleClassifier.js` is pure code with no MediaPipe dependency. It scores each finger's
+extension from joint angles in MediaPipe's metric 3D *world* landmarks, which makes it
+rotation-invariant, then combines those scores per gesture. A trained model (for
+example a TF.js classifier on landmarks, or MediaPipe's `GestureRecognizer`) can replace
+it, or the whole recognizer, without changes to the hooks, UI or backend.
+
+### Verified
+
+* Unit tests use synthetic 3D hand poses, including rotated hands (`npm test`).
+* End to end, MediaPipe's public test photos were fed to a headless browser as a fake
+  webcam: `thumb_up`, `fist`, `pointing_up`, `victory`, and an open palm cropped from
+  `right_hands`. Each was recognised at 96–98% confidence, executed through
+  `CommandService`, and logged with `source=gesture`.
+* Live webcam conditions such as lighting, distance and partial hands may need the
+  thresholds in `ruleClassifier.js` tuned. The "Finger extension" panel on the gesture
+  page shows per-finger scores to help with that.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/api/v1/gestures/commands \
+     -H "Content-Type: application/json" \
+     -d '{"gesture":"THUMBS_UP","intent":"TURN_ON","confidence":0.96,"target_device_id":"light_living_room"}'
+```
+
+| Case | Status | `error.code` |
+|---|---|---|
+| Unknown gesture or intent value, confidence outside 0–1, extra fields | 422 | `invalid_request` |
+| Intent does not match the gesture (e.g. `THUMBS_UP` + `TURN_OFF`) | 422 | `gesture_intent_mismatch` |
+| `NEUTRAL` / `UNKNOWN` | 422 | `gesture_not_actionable` |
+| Confidence below threshold | 422 | `confidence_below_threshold` |
+| Action blocked for gestures (door unlock) | 403 | `action_blocked` |
+| Unknown target device | 404 | `device_not_found` |
+
+Every attempt, including rejections and failures, is stored in the gesture history with
+its outcome (`executed`, `acknowledged`, `rejected` or `failed`). Successful device
+changes also appear in `/api/v1/events` with `source: "gesture"`.
+
+---
+
+## Out of scope so far
+
+LLM / AI agent and AI targeting, predictive ML, voice control, facial recognition,
+authentication, PostgreSQL, and real MQTT/ESP32 hardware communication.

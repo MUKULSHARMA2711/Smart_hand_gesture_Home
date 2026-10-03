@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     sensor_seed: int | None = None
     devices: list[DeviceConfig] = Field(default_factory=lambda: list(DEFAULT_DEVICES))
 
+    # Gesture control
+    gesture_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    # Device actions gesture control may not trigger. Unlocking the front door from a
+    # possibly misread hand pose is blocked by default.
+    gesture_blocked_actions: list[str] = ["unlock"]
+    gesture_history_max_size: int = Field(default=500, ge=1)
+
 
 @lru_cache
 def get_settings() -> Settings:

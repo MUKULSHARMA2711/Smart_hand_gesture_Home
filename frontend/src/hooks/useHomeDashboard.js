@@ -54,5 +54,5 @@ export function useHomeDashboard() {
 
   const clearCommandError = useCallback(() => setCommandError(null), [])
 
-  return { home, events, connectionError, commandError, clearCommandError, pendingDeviceId, sendCommand }
+  return { home, events, connectionError, commandError, clearCommandError, pendingDeviceId, sendCommand, refresh }
 }

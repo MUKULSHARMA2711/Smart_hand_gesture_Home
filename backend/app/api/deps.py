@@ -8,6 +8,8 @@ from app.container import Container
 from app.domain.command_service import CommandService
 from app.domain.home_state import HomeState
 from app.events.store import EventStore
+from app.gestures.history import GestureHistory
+from app.gestures.service import GestureService
 
 
 def get_container(request: Request) -> Container:
@@ -29,6 +31,16 @@ def get_event_store(container: ContainerDep) -> EventStore:
     return container.event_store
 
 
+def get_gesture_service(container: ContainerDep) -> GestureService:
+    return container.gesture_service
+
+
+def get_gesture_history(container: ContainerDep) -> GestureHistory:
+    return container.gesture_history
+
+
 HomeStateDep = Annotated[HomeState, Depends(get_home_state)]
 CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
 EventStoreDep = Annotated[EventStore, Depends(get_event_store)]
+GestureServiceDep = Annotated[GestureService, Depends(get_gesture_service)]
+GestureHistoryDep = Annotated[GestureHistory, Depends(get_gesture_history)]

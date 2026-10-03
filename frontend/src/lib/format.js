@@ -20,6 +20,35 @@ export function humanize(snakeCase) {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+/** "THUMBS_UP" -> "Thumbs up" */
+export function humanizeConstant(constant) {
+  return humanize(constant.toLowerCase())
+}
+
+/** One-line summary of a device's current state, e.g. "On · 70%". */
+export function summarizeDeviceState(device) {
+  const { state } = device
+  switch (device.device_type) {
+    case 'light':
+      return state.is_on ? `On · ${state.brightness}%` : 'Off'
+    case 'fan':
+      return state.is_on ? `On · ${state.speed}%` : 'Off'
+    case 'ac':
+      return `${state.is_on ? 'On' : 'Off'} · ${state.target_temperature_c} °C`
+    case 'door_lock':
+      return state.is_locked ? 'Locked' : 'Unlocked'
+    default:
+      return JSON.stringify(state)
+  }
+}
+
+const ACTION_LABELS = { turn_on: 'ON', turn_off: 'OFF', lock: 'LOCKED', unlock: 'UNLOCKED', select: 'SELECTED' }
+
+/** Device action as a short result label, e.g. "turn_on" -> "ON". */
+export function actionLabel(action) {
+  return ACTION_LABELS[action] ?? action?.toUpperCase() ?? '—'
+}
+
 /** Valid value range for a command, as advertised by the backend's supported_commands. */
 export function commandRange(device, action, fallback = { min: 0, max: 100 }) {
   const descriptor = device.supported_commands.find((command) => command.action === action)

@@ -9,16 +9,29 @@ from app.domain.errors import (
     DeviceNotFoundError,
     DeviceUnavailableError,
     DomainError,
+    IntentNotApplicableError,
     InvalidCommandError,
     UnsupportedCommandError,
 )
+from app.gestures.errors import GestureActionBlockedError, GestureRejectedError
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     DeviceNotFoundError: 404,
     UnsupportedCommandError: 400,
     InvalidCommandError: 422,
     DeviceUnavailableError: 503,
+    IntentNotApplicableError: 400,
+    GestureRejectedError: 422,
+    GestureActionBlockedError: 403,
 }
+
+
+def _status_for(exc: DomainError) -> int:
+    # Walk the class hierarchy so subclasses inherit their base error's status.
+    for cls in type(exc).__mro__:
+        if cls in _STATUS_BY_ERROR:
+            return _STATUS_BY_ERROR[cls]
+    return 400
 
 
 def _error_response(status_code: int, code: str, message: str, details: object = None) -> JSONResponse:
@@ -29,8 +42,7 @@ def _error_response(status_code: int, code: str, message: str, details: object =
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def handle_domain_error(_: Request, exc: DomainError) -> JSONResponse:
-        status_code = _STATUS_BY_ERROR.get(type(exc), 400)
-        return _error_response(status_code, exc.code, exc.message, exc.details)
+        return _error_response(_status_for(exc), exc.code, exc.message, exc.details)
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

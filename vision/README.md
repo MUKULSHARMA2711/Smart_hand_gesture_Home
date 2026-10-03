@@ -1,5 +1,5 @@
 # Vision
 
-Reserved for gesture recognition (MediaPipe). Not part of Day 1.
+Reserved for server-side or offline vision work, for example collecting landmark data and training a gesture classifier.
 
-Recognised gestures will be mapped to device commands and sent with `source=gesture`.
+Real-time hand gesture recognition (Day 2) runs in the browser: see `frontend/src/gestures/`. A trained model can replace `ruleClassifier.js` there without changing the backend.

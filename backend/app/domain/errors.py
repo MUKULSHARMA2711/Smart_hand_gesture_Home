@@ -40,6 +40,16 @@ class InvalidCommandError(DomainError):
         )
 
 
+class IntentNotApplicableError(DomainError):
+    code = "intent_not_applicable"
+
+    def __init__(self, intent: str, device_id: str) -> None:
+        super().__init__(
+            f"Intent '{intent}' cannot be applied to device '{device_id}'.",
+            details={"intent": intent, "device_id": device_id},
+        )
+
+
 class DeviceUnavailableError(DomainError):
     code = "device_unavailable"
 
