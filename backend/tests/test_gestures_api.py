@@ -78,16 +78,17 @@ def test_open_palm_stops_powered_device(client: TestClient, send_gesture: SendGe
     assert device_state(client, FAN)["is_on"] is False
 
 
-def test_open_palm_brings_door_to_safe_state(
+def test_open_palm_does_not_touch_the_door(
     client: TestClient, send_gesture: SendGesture, send_command: SendCommand
 ) -> None:
     send_command(DOOR, "unlock")
 
     response = send_gesture("OPEN_PALM", "STOP", target=DOOR)
 
-    assert response.status_code == 200
-    assert response.json()["gesture_event"]["action"] == "lock"
-    assert device_state(client, DOOR)["is_locked"] is True
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "intent_not_applicable"
+    assert device_state(client, DOOR)["is_locked"] is False
+    assert gesture_events(client)[0]["outcome"] == "rejected"
 
 
 def test_one_finger_selects_without_changing_the_device(client: TestClient, send_gesture: SendGesture) -> None:
@@ -116,13 +117,16 @@ def test_two_fingers_toggles_target(client: TestClient, send_gesture: SendGestur
     assert device_state(client, LIGHT)["is_on"] is False
 
 
-def test_thumbs_up_on_door_locks_it(client: TestClient, send_gesture: SendGesture, send_command: SendCommand) -> None:
+def test_thumbs_up_cannot_lock_the_door(
+    client: TestClient, send_gesture: SendGesture, send_command: SendCommand
+) -> None:
     send_command(DOOR, "unlock")
 
     response = send_gesture("THUMBS_UP", "TURN_ON", target=DOOR)
 
-    assert response.status_code == 200
-    assert response.json()["gesture_event"]["action"] == "lock"
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "intent_not_applicable"
+    assert device_state(client, DOOR)["is_locked"] is False
 
 
 # --- Validation -----------------------------------------------------------------------
@@ -218,23 +222,24 @@ def test_failed_gesture_command_for_unknown_device(client: TestClient, send_gest
     assert "toaster_kitchen" in event["detail"]
 
 
-def test_unlocking_door_by_gesture_is_blocked_by_default(client: TestClient, send_gesture: SendGesture) -> None:
+def test_two_fingers_cannot_toggle_the_door(client: TestClient, send_gesture: SendGesture) -> None:
     response = send_gesture("TWO_FINGERS", "TOGGLE", target=DOOR)
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "action_blocked"
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "intent_not_applicable"
     assert device_state(client, DOOR)["is_locked"] is True
     event = gesture_events(client)[0]
-    assert (event["outcome"], event["action"]) == ("rejected", "unlock")
+    assert (event["outcome"], event["action"]) == ("rejected", None)
 
 
 def test_blocked_actions_are_configurable() -> None:
-    settings = Settings(_env_file=None, sensor_seed=1, gesture_blocked_actions=[])
+    settings = Settings(_env_file=None, sensor_seed=1, gesture_blocked_actions=["turn_on"])
     with TestClient(create_app(settings)) as client:
-        response = make_sender(client)("TWO_FINGERS", "TOGGLE", target=DOOR)
+        response = make_sender(client)("THUMBS_UP", "TURN_ON")
 
-        assert response.status_code == 200
-        assert device_state(client, DOOR)["is_locked"] is False
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "action_blocked"
+        assert device_state(client, LIGHT)["is_on"] is False
 
 
 # --- Event logging ----------------------------------------------------------------------

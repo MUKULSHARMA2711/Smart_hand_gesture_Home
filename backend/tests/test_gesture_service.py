@@ -31,17 +31,21 @@ DOOR = VirtualDoorLock("door", "Door", "lab")
         (Intent.TURN_ON, LIGHT, "turn_on"),
         (Intent.TURN_ON, FAN, "turn_on"),
         (Intent.TURN_ON, AC, "turn_on"),
-        (Intent.TURN_ON, DOOR, "lock"),
         (Intent.TURN_OFF, AC, "turn_off"),
-        (Intent.TURN_OFF, DOOR, "unlock"),
         (Intent.STOP, FAN, "turn_off"),
-        (Intent.STOP, DOOR, "lock"),
         (Intent.TOGGLE, LIGHT, "turn_on"),  # light starts off
-        (Intent.TOGGLE, DOOR, "unlock"),  # door starts locked
+        (Intent.LOCK_DOOR, DOOR, "lock"),
+        (Intent.UNLOCK_DOOR, DOOR, "unlock"),
     ],
 )
 async def test_resolver_maps_intents_by_capability(intent: Intent, device, expected_action: str) -> None:
     assert IntentResolver().resolve(intent, device) == DeviceCommand(action=expected_action)
+
+
+@pytest.mark.parametrize("intent", [Intent.TURN_ON, Intent.TURN_OFF, Intent.STOP, Intent.TOGGLE])
+async def test_power_intents_never_resolve_for_the_door(intent: Intent) -> None:
+    with pytest.raises(IntentNotApplicableError):
+        IntentResolver().resolve(intent, DOOR)
 
 
 async def test_resolver_returns_no_command_for_targeting_intent() -> None:

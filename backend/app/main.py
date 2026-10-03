@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.ai.providers import AIProvider
 from app.api.errors import register_exception_handlers
 from app.api.schemas import RootResponse
 from app.api.v1.router import api_router
@@ -12,7 +13,7 @@ from app.config import Settings, get_settings
 from app.container import build_container
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, ai_provider: AIProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -22,7 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Virtual IoT backend for IntelliHome. Devices are simulated in memory "
         "behind the same abstraction that ESP32/MQTT hardware will implement.",
     )
-    app.state.container = build_container(settings)
+    app.state.container = build_container(settings, ai_provider=ai_provider)
 
     app.add_middleware(
         CORSMiddleware,

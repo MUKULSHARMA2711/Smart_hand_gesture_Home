@@ -1,8 +1,10 @@
 """Command models shared by every device implementation."""
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.devices.types import Capability
 
 
 class DeviceCommand(BaseModel):
@@ -20,10 +22,14 @@ class DeviceCommand(BaseModel):
 
 
 class CommandModel(BaseModel):
-    """Base class for a validated, device-type specific command."""
+    """Base class for a validated, device-type specific command.
+
+    Every concrete command declares the single ``capability`` it provides.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    capability: ClassVar[Capability]
     action: str
 
     @property
@@ -33,8 +39,10 @@ class CommandModel(BaseModel):
 
 
 class TurnOn(CommandModel):
+    capability = Capability.TURN_ON
     action: Literal["turn_on"] = "turn_on"
 
 
 class TurnOff(CommandModel):
+    capability = Capability.TURN_OFF
     action: Literal["turn_off"] = "turn_off"

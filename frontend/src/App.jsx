@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { API_BASE_URL } from './api/client'
 import { useHomeDashboard } from './hooks/useHomeDashboard'
 import { formatTime } from './lib/format'
+import { AssistantPage } from './pages/AssistantPage'
 import { DashboardPage } from './pages/DashboardPage'
 
 const COMMAND_ERROR_TIMEOUT_MS = 6000
@@ -12,6 +13,7 @@ const GesturePage = lazy(() => import('./pages/GesturePage').then((module) => ({
 const ROUTES = [
   { id: 'dashboard', hash: '#/', label: 'Dashboard', subtitle: 'Virtual IoT dashboard · simulated devices' },
   { id: 'gestures', hash: '#/gestures', label: 'Gesture control', subtitle: 'Hand gesture control · runs in your browser' },
+  { id: 'assistant', hash: '#/assistant', label: 'AI assistant', subtitle: 'Natural-language control · validated actions' },
 ]
 
 function useHashRoute() {
@@ -117,6 +119,9 @@ export default function App() {
             pendingDeviceId={dashboard.pendingDeviceId}
             sendCommand={dashboard.sendCommand}
           />
+        )}
+        {home && route.id === 'assistant' && (
+          <AssistantPage home={home} events={dashboard.events} refreshHome={dashboard.refresh} />
         )}
         {home && route.id === 'gestures' && (
           <Suspense fallback={<p className="text-slate-500">Loading gesture control…</p>}>

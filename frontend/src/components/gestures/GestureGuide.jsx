@@ -8,12 +8,13 @@ const GUIDE = [
   { gesture: 'TWO_FINGERS', symbol: '✌️', pose: 'Index and middle fingers up' },
 ]
 
+// Gestures only control powered devices; door locks need an explicit lock/unlock request.
 const INTENT_EFFECTS = {
-  TURN_ON: 'Turn on (locks a door)',
-  TURN_OFF: 'Turn off (unlocks a door)',
-  STOP: 'Safe state: off, or locked',
+  TURN_ON: 'Turn on',
+  TURN_OFF: 'Turn off',
+  STOP: 'Stop: turn off',
   SELECT: 'Next device',
-  TOGGLE: 'Flip on/off or lock/unlock',
+  TOGGLE: 'Flip on/off',
 }
 
 export function GestureGuide({ intents, blockedActions }) {

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.devices.commands import CommandModel
 from app.devices.specs.base import DeviceSpec
-from app.devices.types import DeviceType
+from app.devices.types import Capability, DeviceType
 
 
 class DoorLockState(BaseModel):
@@ -14,10 +14,12 @@ class DoorLockState(BaseModel):
 
 
 class Lock(CommandModel):
+    capability = Capability.LOCK
     action: Literal["lock"] = "lock"
 
 
 class Unlock(CommandModel):
+    capability = Capability.UNLOCK
     action: Literal["unlock"] = "unlock"
 
 

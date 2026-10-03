@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.devices.commands import CommandModel, TurnOff, TurnOn
 from app.devices.specs.base import DeviceSpec
-from app.devices.types import DeviceType
+from app.devices.types import Capability, DeviceType
 
 TEMPERATURE_MIN_C = 16
 TEMPERATURE_MAX_C = 30
@@ -21,6 +21,7 @@ class AcState(BaseModel):
 
 
 class SetTemperature(CommandModel):
+    capability = Capability.SET_TEMPERATURE
     action: Literal["set_temperature"] = "set_temperature"
     value: int = Field(ge=TEMPERATURE_MIN_C, le=TEMPERATURE_MAX_C, strict=True)
 

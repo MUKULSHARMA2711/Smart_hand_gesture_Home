@@ -6,7 +6,7 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from app.devices.commands import CommandModel, DeviceCommand
-from app.devices.types import DeviceType
+from app.devices.types import Capability, DeviceType
 from app.domain.errors import InvalidCommandError, UnsupportedCommandError
 
 StateT = TypeVar("StateT", bound=BaseModel)
@@ -22,6 +22,7 @@ class CommandDescriptor(BaseModel):
     """
 
     action: str
+    capability: Capability
     value: dict[str, Any] | None = None
 
 
@@ -43,11 +44,28 @@ class DeviceSpec(Generic[StateT]):
         self._commands: dict[str, type[CommandModel]] = {
             command.model_fields["action"].default: command for command in commands
         }
+        self._actions_by_capability: dict[Capability, str] = {}
+        for action, command in self._commands.items():
+            if command.capability in self._actions_by_capability:
+                raise ValueError(f"{device_type} declares capability {command.capability} twice.")
+            self._actions_by_capability[command.capability] = action
         self._descriptors = [_describe(action, model) for action, model in self._commands.items()]
 
     @property
     def supported_actions(self) -> list[str]:
         return list(self._commands)
+
+    @property
+    def capabilities(self) -> list[Capability]:
+        """The explicit capabilities of this device type, in declaration order."""
+        return list(self._actions_by_capability)
+
+    def supports(self, capability: Capability) -> bool:
+        return capability in self._actions_by_capability
+
+    def action_for(self, capability: Capability) -> str:
+        """The device action that provides ``capability`` (raises KeyError if unsupported)."""
+        return self._actions_by_capability[capability]
 
     def describe_commands(self) -> list[CommandDescriptor]:
         return list(self._descriptors)
@@ -74,8 +92,9 @@ class DeviceSpec(Generic[StateT]):
 def _describe(action: str, model: type[CommandModel]) -> CommandDescriptor:
     value_schema = model.model_json_schema().get("properties", {}).get("value")
     if value_schema is None:
-        return CommandDescriptor(action=action)
+        return CommandDescriptor(action=action, capability=model.capability)
     return CommandDescriptor(
         action=action,
+        capability=model.capability,
         value={key: value_schema[key] for key in _VALUE_SCHEMA_KEYS if key in value_schema},
     )

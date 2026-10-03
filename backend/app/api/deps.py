@@ -4,6 +4,8 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from app.ai.agent import HomeAgent
+from app.ai.history import InMemoryAgentHistory
 from app.container import Container
 from app.domain.command_service import CommandService
 from app.domain.home_state import HomeState
@@ -44,3 +46,15 @@ CommandServiceDep = Annotated[CommandService, Depends(get_command_service)]
 EventStoreDep = Annotated[EventStore, Depends(get_event_store)]
 GestureServiceDep = Annotated[GestureService, Depends(get_gesture_service)]
 GestureHistoryDep = Annotated[GestureHistory, Depends(get_gesture_history)]
+
+
+def get_agent(container: ContainerDep) -> HomeAgent:
+    return container.agent
+
+
+def get_agent_history(container: ContainerDep) -> InMemoryAgentHistory:
+    return container.agent_history
+
+
+AgentDep = Annotated[HomeAgent, Depends(get_agent)]
+AgentHistoryDep = Annotated[InMemoryAgentHistory, Depends(get_agent_history)]

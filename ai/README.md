@@ -1,5 +1,5 @@
 # AI
 
-Reserved for the AI agent (LLM-based intent parsing and planning). Not part of Day 1.
+Reserved for offline AI work such as evaluation sets and prompt experiments.
 
-The agent will act only through `CommandService.execute(..., source=CommandSource.AI_AGENT)` and discover device capabilities from `supported_commands`.
+The Day 3 home agent lives in the backend: `backend/app/ai/` (agent, validation, providers) together with `backend/app/domain/intents.py` and `backend/app/domain/policy.py`. See the "AI home agent" section of the top-level README.

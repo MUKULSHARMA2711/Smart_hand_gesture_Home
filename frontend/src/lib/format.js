@@ -60,7 +60,7 @@ export function commandRange(device, action, fallback = { min: 0, max: 100 }) {
 
 const STATE_FIELDS = {
   is_on: { label: 'power', format: (on) => (on ? 'on' : 'off') },
-  is_locked: { label: 'lock', format: (locked) => (locked ? 'locked' : 'unlocked') },
+  is_locked: { label: 'door', format: (locked) => (locked ? 'locked' : 'unlocked') },
   brightness: { label: 'brightness', format: (v) => `${v}%` },
   speed: { label: 'speed', format: (v) => `${v}%` },
   target_temperature_c: { label: 'target', format: (v) => `${v} °C` },

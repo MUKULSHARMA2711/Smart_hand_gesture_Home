@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.devices.commands import CommandModel, TurnOff, TurnOn
 from app.devices.specs.base import DeviceSpec
-from app.devices.types import DeviceType
+from app.devices.types import Capability, DeviceType
 
 SPEED_MIN = 0
 SPEED_MAX = 100
@@ -19,6 +19,7 @@ class FanState(BaseModel):
 
 
 class SetSpeed(CommandModel):
+    capability = Capability.SET_SPEED
     action: Literal["set_speed"] = "set_speed"
     value: int = Field(ge=SPEED_MIN, le=SPEED_MAX, strict=True)
 

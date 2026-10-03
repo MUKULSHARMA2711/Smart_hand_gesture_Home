@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.devices.commands import CommandModel, DeviceCommand
 from app.devices.specs.base import CommandDescriptor, DeviceSpec
-from app.devices.types import DeviceStatus, DeviceType
+from app.devices.types import Capability, DeviceStatus, DeviceType
 from app.domain.errors import DeviceUnavailableError
 
 
@@ -22,6 +22,7 @@ class DeviceSnapshot(BaseModel):
     status: DeviceStatus
     state: dict[str, Any]
     power_w: float
+    capabilities: list[Capability]
     supported_commands: list[CommandDescriptor]
 
 
@@ -104,5 +105,6 @@ class Device(ABC):
             status=self.status,
             state=self.get_state(),
             power_w=self.power_w,
+            capabilities=self._spec.capabilities,
             supported_commands=self._spec.describe_commands(),
         )

@@ -1,69 +1,102 @@
 """Device-agnostic intents and their resolution to concrete device commands.
 
 An intent says *what* the user wants ("turn it on") without naming a device action.
-Gesture control emits intents today; voice control or the AI agent can emit the same
-intents later. Resolution is capability-based: it looks at the actions the target
-device's spec supports and at its current state, never at the concrete device class.
+Gesture control, the AI agent and (later) voice control all emit these intents.
+
+Resolution is capability-based and unambiguous: every device intent requires exactly
+one explicit :class:`Capability`, and a device either declares it or the intent is not
+applicable. In particular TURN_ON / TURN_OFF / STOP / TOGGLE require power
+capabilities, so they can never lock or unlock a door — only LOCK_DOOR / UNLOCK_DOOR can.
 """
 
+from collections.abc import Iterable
 from enum import StrEnum
 from typing import Any
 
 from app.devices.base import Device
 from app.devices.commands import DeviceCommand
+from app.devices.types import Capability
 from app.domain.errors import IntentNotApplicableError
 
 
 class Intent(StrEnum):
+    # Device control
     TURN_ON = "TURN_ON"
     TURN_OFF = "TURN_OFF"
-    STOP = "STOP"
-    SELECT = "SELECT"
+    SET_BRIGHTNESS = "SET_BRIGHTNESS"
+    SET_SPEED = "SET_SPEED"
+    SET_TEMPERATURE = "SET_TEMPERATURE"
+    LOCK_DOOR = "LOCK_DOOR"
+    UNLOCK_DOOR = "UNLOCK_DOOR"
     TOGGLE = "TOGGLE"
+    STOP = "STOP"
+    # Queries (never change a device)
+    GET_STATUS = "GET_STATUS"
+    GET_ENERGY = "GET_ENERGY"
+    GET_HISTORY = "GET_HISTORY"
+    # Targeting / no-op
+    SELECT = "SELECT"
     NONE = "NONE"
 
 
-# Intents that choose a target rather than change a device.
-TARGETING_INTENTS = frozenset({Intent.SELECT})
-
-# For each intent, the device actions that fulfil it, in order of preference.
-_ACTION_CANDIDATES: dict[Intent, tuple[str, ...]] = {
-    Intent.TURN_ON: ("turn_on", "lock"),
-    Intent.TURN_OFF: ("turn_off", "unlock"),
-    # STOP brings a device to its safe resting state: powered devices off, locks locked.
-    Intent.STOP: ("turn_off", "lock"),
+# Each device intent needs exactly one capability on the target device.
+INTENT_CAPABILITIES: dict[Intent, Capability] = {
+    Intent.TURN_ON: Capability.TURN_ON,
+    Intent.TURN_OFF: Capability.TURN_OFF,
+    Intent.STOP: Capability.TURN_OFF,  # gesture "stop": power off; not applicable to locks
+    Intent.SET_BRIGHTNESS: Capability.SET_BRIGHTNESS,
+    Intent.SET_SPEED: Capability.SET_SPEED,
+    Intent.SET_TEMPERATURE: Capability.SET_TEMPERATURE,
+    Intent.LOCK_DOOR: Capability.LOCK,
+    Intent.UNLOCK_DOOR: Capability.UNLOCK,
 }
 
-# Binary state fields TOGGLE can flip: (field, action when True, action when False).
-_TOGGLES: tuple[tuple[str, str, str], ...] = (
-    ("is_on", "turn_off", "turn_on"),
-    ("is_locked", "unlock", "lock"),
-)
+# TOGGLE flips power, so it needs both power capabilities (never lock/unlock).
+TOGGLE_CAPABILITIES = (Capability.TURN_ON, Capability.TURN_OFF)
+
+VALUE_INTENTS = frozenset({Intent.SET_BRIGHTNESS, Intent.SET_SPEED, Intent.SET_TEMPERATURE})
+QUERY_INTENTS = frozenset({Intent.GET_STATUS, Intent.GET_ENERGY, Intent.GET_HISTORY})
+TARGETING_INTENTS = frozenset({Intent.SELECT})
+
+
+def is_applicable(intent: Intent, device: Device) -> bool:
+    """Whether ``device`` declares the capabilities ``intent`` needs."""
+    if intent is Intent.TOGGLE:
+        return all(device.spec.supports(capability) for capability in TOGGLE_CAPABILITIES)
+    capability = INTENT_CAPABILITIES.get(intent)
+    return capability is not None and device.spec.supports(capability)
+
+
+def applicable_devices(intent: Intent, devices: Iterable[Device]) -> list[Device]:
+    """The devices a broad request such as "turn on everything" may touch."""
+    return [device for device in devices if is_applicable(intent, device)]
 
 
 class IntentResolver:
     """Translates an intent into the command that fulfils it on a given device."""
 
-    def resolve(self, intent: Intent, device: Device) -> DeviceCommand | None:
-        """Return the command for ``intent`` on ``device``, or ``None`` for targeting intents."""
+    def resolve(self, intent: Intent, device: Device, value: Any = None) -> DeviceCommand | None:
+        """Return the command for ``intent`` on ``device``, or ``None`` for targeting intents.
+
+        Raises :class:`IntentNotApplicableError` when the device lacks the capability.
+        Value range checks are left to the device spec.
+        """
         if intent in TARGETING_INTENTS:
             return None
-
-        supported = set(device.spec.supported_actions)
-        if intent is Intent.TOGGLE:
-            action = _toggle_action(device.get_state(), supported)
-        else:
-            action = next((a for a in _ACTION_CANDIDATES.get(intent, ()) if a in supported), None)
-
-        if action is None:
+        if not is_applicable(intent, device):
             raise IntentNotApplicableError(intent, device.id)
-        return DeviceCommand(action=action)
 
+        if intent is Intent.TOGGLE:
+            capability = Capability.TURN_OFF if device.get_state().get("is_on") else Capability.TURN_ON
+        else:
+            capability = INTENT_CAPABILITIES[intent]
 
-def _toggle_action(state: dict[str, Any], supported: set[str]) -> str | None:
-    for field, when_true, when_false in _TOGGLES:
-        if field in state:
-            action = when_true if state[field] else when_false
-            if action in supported:
-                return action
-    return None
+        action = device.spec.action_for(capability)
+        return DeviceCommand(action=action, value=value if intent in VALUE_INTENTS else None)
+
+    @staticmethod
+    def capability_for(intent: Intent, device: Device) -> Capability:
+        """The capability a (resolvable) intent exercises on ``device``."""
+        if intent is Intent.TOGGLE:
+            return Capability.TURN_OFF if device.get_state().get("is_on") else Capability.TURN_ON
+        return INTENT_CAPABILITIES[intent]

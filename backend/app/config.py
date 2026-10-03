@@ -5,8 +5,9 @@ Every setting can be overridden with an environment variable prefixed ``SMARTHOM
 """
 
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.devices.types import DeviceDriver, DeviceType
@@ -35,7 +36,9 @@ DEFAULT_DEVICES = [
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="SMARTHOME_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="SMARTHOME_", env_file=".env", extra="ignore", populate_by_name=True
+    )
 
     app_name: str = "IntelliHome"
     api_prefix: str = "/api/v1"
@@ -48,10 +51,28 @@ class Settings(BaseSettings):
 
     # Gesture control
     gesture_confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
-    # Device actions gesture control may not trigger. Unlocking the front door from a
-    # possibly misread hand pose is blocked by default.
+    # Device actions gesture control may not trigger. No gesture maps to a door intent, and
+    # "unlock" is blocked here as well (defence in depth against a misread hand pose).
     gesture_blocked_actions: list[str] = ["unlock"]
     gesture_history_max_size: int = Field(default=500, ge=1)
+
+    # AI agent. Provider, model and key also accept the unprefixed AI_PROVIDER / AI_MODEL / AI_API_KEY.
+    ai_provider: Literal["mock", "anthropic"] = Field(
+        default="mock", validation_alias=AliasChoices("SMARTHOME_AI_PROVIDER", "AI_PROVIDER", "ai_provider")
+    )
+    ai_model: str = Field(
+        default="claude-opus-5-5", validation_alias=AliasChoices("SMARTHOME_AI_MODEL", "AI_MODEL", "ai_model")
+    )
+    # Optional: without it the Anthropic SDK uses ANTHROPIC_API_KEY or an `ant auth login` profile.
+    ai_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("SMARTHOME_AI_API_KEY", "AI_API_KEY", "ai_api_key")
+    )
+    ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+    ai_max_tool_rounds: int = Field(default=4, ge=0, le=10)
+    ai_timeout_s: float = Field(default=60.0, gt=0)
+    # Explicit "unlock the front door" requests are allowed for the AI agent; set False to forbid.
+    ai_allow_unlock: bool = True
+    ai_history_max_size: int = Field(default=100, ge=1)
 
 
 @lru_cache

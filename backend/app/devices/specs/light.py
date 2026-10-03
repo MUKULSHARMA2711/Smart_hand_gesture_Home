@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.devices.commands import CommandModel, TurnOff, TurnOn
 from app.devices.specs.base import DeviceSpec
-from app.devices.types import DeviceType
+from app.devices.types import Capability, DeviceType
 
 BRIGHTNESS_MIN = 0
 BRIGHTNESS_MAX = 100
@@ -18,6 +18,7 @@ class LightState(BaseModel):
 
 
 class SetBrightness(CommandModel):
+    capability = Capability.SET_BRIGHTNESS
     action: Literal["set_brightness"] = "set_brightness"
     value: int = Field(ge=BRIGHTNESS_MIN, le=BRIGHTNESS_MAX, strict=True)
 

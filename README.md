@@ -12,12 +12,15 @@ business logic or the (future) AI layer.
 * **Day 2:** real-time **hand gesture control**. MediaPipe runs in the browser, and
   recognised gestures become device-agnostic intents that go through the same
   `CommandService`. See [Gesture control](#gesture-control-day-2).
+* **Day 3:** an **AI home agent** for natural-language control. It plans structured
+  actions over explicit device capabilities, and the backend validates them before they
+  run through `CommandService`. See [AI home agent](#ai-home-agent-day-3).
 
 ```
 smart-ai-home/
-├── backend/      FastAPI service: devices, home state, commands, events, gestures
-├── frontend/     React + Vite + Tailwind: dashboard + gesture control (MediaPipe)
-├── ai/           LLM agent (later)
+├── backend/      FastAPI service: devices, home state, commands, events, gestures, AI agent
+├── frontend/     React + Vite + Tailwind: dashboard, gesture control (MediaPipe), AI assistant
+├── ai/           Reserved for offline AI work (evals, prompt experiments); the agent lives in backend/app/ai
 ├── vision/       Server-side / offline vision work, e.g. training a gesture model (later)
 ├── ml/           Models: occupancy prediction, energy forecasting (later)
 ├── simulation/   Scenario scripts & richer environment simulation (later)
@@ -172,6 +175,9 @@ every command it re-fetches state and events immediately.
 | GET | `/api/v1/gestures/config` | Gesture → intent mapping, confidence threshold, blocked actions |
 | POST | `/api/v1/gestures/commands` | Execute a recognised gesture on a target device |
 | GET | `/api/v1/gestures/events?limit=50` | Gesture history (every attempt, any outcome), newest first |
+| POST | `/api/v1/ai/command` | Natural-language request → validated plan → execution |
+| GET | `/api/v1/ai/status` | AI provider, allowed intents, per-device capabilities, security policy |
+| GET | `/api/v1/ai/history?limit=20` | Recent assistant interactions, newest first |
 | GET | `/api/v1/health` | Liveness check |
 
 ### Devices and commands
@@ -368,18 +374,22 @@ browser.**
 ### Gestures and intents
 
 Gestures map to **device-agnostic intents**. The gesture layer never names a device or a
-device action. The `IntentResolver` (`app/domain/intents.py`) decides what an intent
-means for the selected device. It looks at the actions the device's spec supports and
-at its current state, never at its class, so voice control or the AI agent can reuse it.
+device action. The `IntentResolver` (`app/domain/intents.py`) maps each intent to exactly
+one [explicit capability](#capability-model), so voice control and the AI agent reuse the
+same rules.
 
 | Gesture | Intent | Light / fan / AC | Door lock |
 |---|---|---|---|
-| 👍 `THUMBS_UP` | `TURN_ON` | `turn_on` | `lock` |
-| ✊ `FIST` | `TURN_OFF` | `turn_off` | `unlock` (blocked by default) |
-| ✋ `OPEN_PALM` | `STOP` | `turn_off` (safe state) | `lock` (safe state) |
+| 👍 `THUMBS_UP` | `TURN_ON` | `turn_on` | not applicable (rejected) |
+| ✊ `FIST` | `TURN_OFF` | `turn_off` | not applicable (rejected) |
+| ✋ `OPEN_PALM` | `STOP` | `turn_off` | not applicable (rejected) |
 | ☝️ `ONE_FINGER` | `SELECT` | selects the next device; no device command | same |
-| ✌️ `TWO_FINGERS` | `TOGGLE` | `turn_on` ⇄ `turn_off` | `lock` ⇄ `unlock` (unlock blocked) |
+| ✌️ `TWO_FINGERS` | `TOGGLE` | `turn_on` ⇄ `turn_off` | not applicable (rejected) |
 | `NEUTRAL` / `UNKNOWN` | `NONE` | not actionable | — |
+
+> **Changed in Day 3:** in Day 2, gestures on the door mapped to lock/unlock (for example
+> THUMBS_UP locked it). Door locks now only have the `LOCK` and `UNLOCK` capabilities, so
+> power intents return `400 intent_not_applicable` for the door.
 
 `NEUTRAL` means no hand is in view. `UNKNOWN` means a hand is visible but no gesture
 matched.
@@ -388,8 +398,8 @@ matched.
 `ONE_FINGER`, is sent as `target_device_id`. AI context reasoning can replace this later
 without touching the gesture layer.
 
-**Safety:** `SMARTHOME_GESTURE_BLOCKED_ACTIONS` defaults to `["unlock"]`, so a misread
-hand pose can never open the front door. Set it to `[]` to allow unlocking by gesture.
+**Safety:** no gesture maps to a door intent. `SMARTHOME_GESTURE_BLOCKED_ACTIONS` (default
+`["unlock"]`) adds a configurable block list on top, as defence in depth.
 
 ### Confidence
 
@@ -454,7 +464,8 @@ curl -X POST http://localhost:8000/api/v1/gestures/commands \
 | Intent does not match the gesture (e.g. `THUMBS_UP` + `TURN_OFF`) | 422 | `gesture_intent_mismatch` |
 | `NEUTRAL` / `UNKNOWN` | 422 | `gesture_not_actionable` |
 | Confidence below threshold | 422 | `confidence_below_threshold` |
-| Action blocked for gestures (door unlock) | 403 | `action_blocked` |
+| Intent not applicable to the target (e.g. `THUMBS_UP` on the door) | 400 | `intent_not_applicable` |
+| Action on the gesture block list (`SMARTHOME_GESTURE_BLOCKED_ACTIONS`) | 403 | `action_blocked` |
 | Unknown target device | 404 | `device_not_found` |
 
 Every attempt, including rejections and failures, is stored in the gesture history with
@@ -463,7 +474,193 @@ changes also appear in `/api/v1/events` with `source: "gesture"`.
 
 ---
 
+## AI home agent (Day 3)
+
+```
+"Turn on the fan and set it to 70"
+        │
+        ▼
+HomeContext ── devices (capabilities + state), sensors, energy, recent events
+        │
+        ▼
+AIProvider.plan()                MockAIProvider (default) or AnthropicProvider (Claude)
+  Claude may call read-only tools: get_home_state · get_device_status ·
+                                   get_recent_events · get_energy_usage
+        │  untrusted JSON: {"message": "...", "actions": [{device_id, intent, parameters}]}
+        ▼
+ActionPlan / PlannedAction       strict Pydantic models; each action parsed separately
+        ▼
+PlanValidator                    allowed intent → parameter schema → device exists →
+                                 device has the capability → value range (device spec) →
+                                 SecurityPolicy → duplicates
+        ▼   all actions validated before any executes; rejected ones never run
+AgentTools.control_device ──► CommandService (source = "ai_agent") ──► Device
+        ▼
+AgentResponse: reply · per-action results · device events · changed devices · outcome
+```
+
+### How the LLM is kept away from device code
+
+* The model only ever returns **data**: a JSON plan constrained by a schema. It has no
+  tool that changes a device. Its only tools are the four read-only ones above, and
+  `call_read_only()` refuses any other tool name, `control_device` included.
+* The backend re-validates every action with Pydantic. Unknown fields such as
+  `"code": "rm -rf /"` are rejected, so are unknown intents and non-object actions.
+* Only `HomeAgent`, after validation, calls `AgentTools.control_device`, which is the
+  existing `CommandService.execute(..., source=ai_agent)`. There is no second
+  device-control path and no second event system.
+* The provider SDK is isolated in `app/ai/providers/anthropic_provider.py` and imported
+  lazily.
+
+### Capability model
+
+| Device | Capabilities |
+|---|---|
+| Light | `TURN_ON`, `TURN_OFF`, `SET_BRIGHTNESS` |
+| Fan | `TURN_ON`, `TURN_OFF`, `SET_SPEED` |
+| AC | `TURN_ON`, `TURN_OFF`, `SET_TEMPERATURE` |
+| Door | `LOCK`, `UNLOCK` |
+
+Each device command class declares exactly one capability, and a device's capabilities
+are those of the commands its spec lists. Capabilities are returned in every device
+payload (`capabilities`) and by `GET /api/v1/ai/status`.
+
+| Intent | Required capability | Parameters |
+|---|---|---|
+| `TURN_ON` / `TURN_OFF` | `TURN_ON` / `TURN_OFF` | none |
+| `SET_BRIGHTNESS` / `SET_SPEED` / `SET_TEMPERATURE` | same name | `{"value": int}`, range checked by the device spec |
+| `LOCK_DOOR` / `UNLOCK_DOOR` | `LOCK` / `UNLOCK` | none |
+| `GET_STATUS` / `GET_ENERGY` / `GET_HISTORY` | none (read-only) | optional `device_id`; `GET_HISTORY` takes `{"limit": 1-50}` |
+| `TOGGLE`, `STOP`, `SELECT` (gesture only) | power capabilities / targeting | not available to the AI agent |
+
+### Why "turn on everything" can never touch the door
+
+There are three independent layers:
+
+1. **Capabilities:** `TURN_ON` requires the `TURN_ON` capability, and the door only has
+   `LOCK` and `UNLOCK`. Even if a model emits `{"device_id": "door_main", "intent": "TURN_ON"}`,
+   the validator rejects it as `unsupported_capability`.
+2. **Separate door intents:** the only way to change a lock is `LOCK_DOOR` or
+   `UNLOCK_DOOR`. A broad request can only reach the door if the planner explicitly
+   emits one of those intents.
+3. **Security policy** (`app/domain/policy.py`): an AI `LOCK_DOOR` or `UNLOCK_DOOR` is
+   only allowed when the *user's own message* contains "lock" or "unlock" respectively.
+   This is checked in code, not by the LLM. "I'm leaving home" can therefore never lock
+   the door, even if the model proposes it; the action is rejected as
+   `not_explicitly_requested`. `SMARTHOME_AI_ALLOW_UNLOCK=false` disables AI unlocking
+   entirely. The `PolicyDecision` type has room for confirmation or authentication later.
+
+The wording check is **negation-aware**. A "lock"/"unlock" mention only counts if no
+negation ("don't", "do not", "never", "not", "won't", …) appears before it in the same
+clause. So "don't unlock the door", "never unlock the door" and "I don't want the door
+unlocked" are rejected even if the model proposes `UNLOCK_DOOR`. "Don't turn on the
+lights and unlock the door" still unlocks, because the negation belongs to the other
+clause.
+
+This is a rule-based check, not language understanding: a negation that comes *after*
+the verb ("unlock the door… not!") is not detected. A later phase should add explicit
+confirmation for door actions.
+
+### Example commands (mock provider)
+
+| You say | Plan | Result |
+|---|---|---|
+| Turn on the living room light | `TURN_ON light_living_room` | ✓ executed |
+| Turn off everything | `TURN_OFF` light, fan, AC | ✓ executed; door untouched, the reply says why |
+| I'm leaving home | `TURN_OFF` for devices that are on | door untouched; suggests "lock the front door" |
+| Lock the front door / Unlock the front door | `LOCK_DOOR` / `UNLOCK_DOOR door_main` | ✓ executed |
+| Turn on the fan and set it to 70 | `TURN_ON` + `SET_SPEED {"value": 70}` | ✓ executed |
+| What's happening in my house? | `GET_STATUS` | answered; nothing changes |
+| How much energy are we using? | `GET_ENERGY` | answered; nothing changes |
+| Turn on the front door | `TURN_ON door_main` | ✗ rejected: `unsupported_capability` |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/command \
+     -H "Content-Type: application/json" -d '{"message": "Turn on the fan and set it to 70"}'
+```
+
+```json
+{
+  "request": "Turn on the fan and set it to 70",
+  "reply": "The Living Room Fan is currently off. I'll turn it on and set its speed to 70%.",
+  "outcome": "2 executed.",
+  "provider": "mock:rule-based",
+  "plan_valid": true,
+  "actions": [
+    {"index": 0, "device_id": "fan_living_room", "intent": "TURN_ON", "parameters": {}, "status": "executed",
+     "device_action": "turn_on", "previous_state": {"is_on": false, "speed": 50}, "new_state": {"is_on": true, "speed": 50}},
+    {"index": 1, "device_id": "fan_living_room", "intent": "SET_SPEED", "parameters": {"value": 70}, "status": "executed",
+     "device_action": "set_speed", "previous_state": {"is_on": true, "speed": 50}, "new_state": {"is_on": true, "speed": 70}}
+  ],
+  "device_events": [{"device_id": "fan_living_room", "action": "turn_on", "source": "ai_agent", "...": "..."}, "..."],
+  "changed_devices": ["fan_living_room"],
+  "any_rejected": false,
+  "errors": []
+}
+```
+
+`reply` is the planner's explanation and is untrusted text. `outcome` and each action's
+`status` (`executed`, `answered`, `rejected` or `failed`, plus `code`/`reason`) are
+generated by the backend and describe what actually happened.
+
+### Provider configuration
+
+| Setting | Default | Notes |
+|---|---|---|
+| `SMARTHOME_AI_PROVIDER` / `AI_PROVIDER` | `mock` | `mock` or `anthropic` |
+| `SMARTHOME_AI_MODEL` / `AI_MODEL` | `claude-opus-5-5` | Any Claude model id |
+| `SMARTHOME_AI_API_KEY` / `AI_API_KEY` | unset | Optional. If unset, the SDK uses `ANTHROPIC_API_KEY` or an `ant auth login` profile |
+| `SMARTHOME_AI_EFFORT` | `medium` | `low` … `max` |
+| `SMARTHOME_AI_ALLOW_UNLOCK` | `true` | Allow explicit "unlock the front door" through the AI |
+
+**Mock mode** is the default: a deterministic, rule-based planner (`MockAIProvider`) that
+needs no key and no network. It receives the same `HomeContext` and returns the same
+plan shape as the LLM, so it goes through identical validation. All automated tests use
+it or scripted fake providers. No test calls a real LLM.
+
+**Real provider (Claude).** `AnthropicProvider` uses the official `anthropic` SDK with a
+manual tool loop. It enables structured outputs (`output_config.format`) so the final
+answer is schema-valid JSON, strict read-only tools, and the server-side refusal
+fallback (`fallbacks: "default"`). Set it up without committing secrets:
+
+```bash
+cd backend
+# Either keep the key in your shell…
+export ANTHROPIC_API_KEY=...            # PowerShell: $env:ANTHROPIC_API_KEY="..."
+# …or in backend/.env, which is git-ignored:  SMARTHOME_AI_API_KEY=...
+AI_PROVIDER=anthropic uvicorn app.main:app --port 8000
+```
+
+Manual test once a real provider is configured (this calls the paid API):
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/ai/command -H "Content-Type: application/json" \
+     -d '{"message": "I am leaving home, lock the front door"}' | python -m json.tool
+curl -s http://localhost:8000/api/v1/ai/status      # "provider": "anthropic", "mock": false
+```
+
+If the provider is misconfigured (no credentials, a bad profile, network errors), the
+dashboard, devices and gestures keep working. The assistant replies "The AI planner is
+unavailable, so nothing was changed." and puts the reason in `errors`.
+
+### Frontend
+
+The **AI assistant** tab (`#/assistant`) shows:
+
+* a chat with suggestion chips
+* the planner's reply
+* the action plan, each action marked ✓ done, ✓ answered or ✗ rejected/failed with the reason
+* which devices changed and their new state
+* the backend's outcome line
+* the active provider, with a mock-mode notice and the safety policy
+* recent AI actions, taken from the event log
+
+The dashboard's event log labels every event's source: Dashboard, Gesture, AI agent or
+Automation.
+
+---
+
 ## Out of scope so far
 
-LLM / AI agent and AI targeting, predictive ML, voice control, facial recognition,
+Voice control, predictive ML, anomaly detection, multi-agent architecture, facial recognition,
 authentication, PostgreSQL, and real MQTT/ESP32 hardware communication.

@@ -47,6 +47,12 @@ export const api = {
     })
   },
 
+  aiCommand: (message) => request('/ai/command', { method: 'POST', body: JSON.stringify({ message }) }),
+
+  getAIStatus: () => request('/ai/status'),
+
+  getAIHistory: (limit = 20) => request(`/ai/history?limit=${limit}`),
+
   getGestureConfig: () => request('/gestures/config'),
 
   getGestureEvents: (limit = 15) => request(`/gestures/events?limit=${limit}`),
