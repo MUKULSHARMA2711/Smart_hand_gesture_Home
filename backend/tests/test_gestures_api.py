@@ -298,6 +298,7 @@ def test_gesture_config_exposes_mapping(client: TestClient) -> None:
         "OPEN_PALM": "STOP",
         "ONE_FINGER": "SELECT",
         "TWO_FINGERS": "TOGGLE",
+        "PINCH": "ADJUST",
         "NEUTRAL": "NONE",
         "UNKNOWN": "NONE",
     }

@@ -2,7 +2,7 @@
  * Shared gesture vocabulary. Kept in sync with the backend's `Gesture` / `Intent` enums;
  * the backend's GET /gestures/config is the source of truth for the intent mapping.
  *
- * @typedef {'THUMBS_UP'|'FIST'|'OPEN_PALM'|'ONE_FINGER'|'TWO_FINGERS'|'NEUTRAL'|'UNKNOWN'} Gesture
+ * @typedef {'THUMBS_UP'|'FIST'|'OPEN_PALM'|'ONE_FINGER'|'TWO_FINGERS'|'PINCH'|'NEUTRAL'|'UNKNOWN'} Gesture
  *
  * @typedef {object} RecognitionResult
  * @property {Gesture} gesture
@@ -21,6 +21,7 @@ export const GESTURES = Object.freeze({
   OPEN_PALM: 'OPEN_PALM',
   ONE_FINGER: 'ONE_FINGER',
   TWO_FINGERS: 'TWO_FINGERS',
+  PINCH: 'PINCH', // detected separately (gestures/pinch.js); never goes through the stabilizer
   NEUTRAL: 'NEUTRAL',
   UNKNOWN: 'UNKNOWN',
 })
@@ -32,6 +33,7 @@ export const DEFAULT_GESTURE_INTENTS = Object.freeze({
   OPEN_PALM: 'STOP',
   ONE_FINGER: 'SELECT',
   TWO_FINGERS: 'TOGGLE',
+  PINCH: 'ADJUST',
   NEUTRAL: 'NONE',
   UNKNOWN: 'NONE',
 })

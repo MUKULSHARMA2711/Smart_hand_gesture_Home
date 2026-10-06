@@ -90,9 +90,9 @@ export const api = {
   getGestureEvents: (limit = 15) => request(`/gestures/events?limit=${limit}`),
 
   /** Sends only the recognition result — never camera frames. */
-  sendGesture: ({ gesture, intent, confidence, targetDeviceId }) =>
+  sendGesture: ({ gesture, intent, confidence, targetDeviceId, value }) =>
     request('/gestures/commands', {
       method: 'POST',
-      body: JSON.stringify({ gesture, intent, confidence, target_device_id: targetDeviceId }),
+      body: JSON.stringify({ gesture, intent, confidence, target_device_id: targetDeviceId, ...(value === undefined ? {} : { value }) }),
     }),
 }

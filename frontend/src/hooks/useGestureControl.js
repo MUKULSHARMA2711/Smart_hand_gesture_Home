@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import { createAdjustmentController } from '../gestures/adjustment'
 import { DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_GESTURE_INTENTS } from '../gestures/types'
 
 const HISTORY_LIMIT = 15
@@ -27,6 +28,7 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
   const [events, setEvents] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [lastAction, setLastAction] = useState(null)
+  const [adjustment, setAdjustment] = useState(null)
 
   const selectedIdRef = useRef(selectedId)
   const devicesRef = useRef(devices)
@@ -102,5 +104,40 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
     [config.intents, refreshEvents, onDevicesChanged],
   )
 
-  return { config, configError, events, selectedId, setSelectedId, lastAction, execute }
+  // Pinch adjustment: previews on every move, one PINCH/ADJUST command on release.
+  const adjuster = useRef(null)
+  if (adjuster.current === null) {
+    adjuster.current = createAdjustmentController({
+      getDevice: () => devicesRef.current.find((device) => device.id === selectedIdRef.current) ?? null,
+      onChange: (update) =>
+        setAdjustment((current) =>
+          update.status === 'adjusting' && current?.status === 'adjusting' && current.value === update.value
+            ? current // unchanged preview: no re-render
+            : { ...(update.deviceName === undefined ? current : {}), ...update },
+        ),
+      send: async ({ gesture, intent, value, confidence, targetDeviceId }) => {
+        if (inFlight.current) {
+          setAdjustment((current) => ({ ...current, status: 'failure', message: 'Another gesture command is still running.' }))
+          return
+        }
+        inFlight.current = true
+        const attempt = { gesture, intent, confidence, targetId: targetDeviceId, value, at: new Date().toISOString() }
+        setLastAction({ ...attempt, status: 'pending' })
+        try {
+          const response = await api.sendGesture({ gesture, intent, confidence, targetDeviceId, value })
+          setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
+          setAdjustment((current) => ({ ...current, status: 'success', value }))
+        } catch (error) {
+          setLastAction({ ...attempt, status: 'failure', action: null, message: error.message })
+          setAdjustment((current) => ({ ...current, status: 'failure', message: error.message }))
+        } finally {
+          inFlight.current = false
+          await Promise.all([refreshEvents(), onDevicesChanged?.()])
+        }
+      },
+    })
+  }
+  const onPinch = useCallback((event) => adjuster.current.handle(event), [])
+
+  return { config, configError, events, selectedId, setSelectedId, lastAction, execute, adjustment, onPinch }
 }

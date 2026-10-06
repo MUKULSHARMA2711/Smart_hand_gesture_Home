@@ -44,6 +44,7 @@ def test_existing_gesture_mapping_is_unchanged_and_adjust_is_not_for_the_ai() ->
         Gesture.OPEN_PALM: Intent.STOP,
         Gesture.ONE_FINGER: Intent.SELECT,
         Gesture.TWO_FINGERS: Intent.TOGGLE,
+        Gesture.PINCH: Intent.ADJUST,  # the only addition
         Gesture.NEUTRAL: Intent.NONE,
         Gesture.UNKNOWN: Intent.NONE,
     }
@@ -63,15 +64,75 @@ def test_fan_and_ac_value_ranges_are_published_for_the_ui(client: TestClient) ->
 @pytest.mark.parametrize(
     "body",
     [
-        {"gesture": "THUMBS_UP", "intent": "TURN_ON", "value": 70},  # current gestures take no value
-        {"gesture": "THUMBS_UP", "intent": "ADJUST", "value": 70},  # no gesture maps to ADJUST yet
+        {"gesture": "THUMBS_UP", "intent": "TURN_ON", "value": 70},  # the five gestures take no value
+        {"gesture": "THUMBS_UP", "intent": "ADJUST", "value": 70},  # ADJUST belongs to PINCH only
         {"gesture": "THUMBS_UP", "intent": "TURN_ON", "value": 70.5},
+        {"gesture": "PINCH", "intent": "ADJUST"},  # a pinch release must carry its value
+        {"gesture": "PINCH", "intent": "ADJUST", "value": 70.5},
+        {"gesture": "PINCH", "intent": "ADJUST", "value": 250},  # outside the published range
     ],
 )
-def test_gesture_values_are_rejected_until_a_gesture_needs_them(client: TestClient, body: dict) -> None:
+def test_invalid_gesture_values_are_rejected(client: TestClient, body: dict) -> None:
     response = client.post(
         f"{API}/gestures/commands", json={**body, "confidence": 0.95, "target_device_id": "fan_living_room"}
     )
     assert response.status_code == 422
     assert client.get(f"{API}/devices/fan_living_room").json()["state"]["is_on"] is False
+    assert client.get(f"{API}/events").json() == []
+
+
+# --- PINCH release: one ADJUST command through the existing gesture endpoint ----------------------
+
+
+def pinch(client: TestClient, device_id: str, value: int, confidence: float = 0.9):
+    return client.post(
+        f"{API}/gestures/commands",
+        json={"gesture": "PINCH", "intent": "ADJUST", "confidence": confidence, "target_device_id": device_id, "value": value},
+    )
+
+
+@pytest.mark.parametrize(
+    ("device_id", "value", "action", "state"),
+    [
+        ("fan_living_room", 70, "set_speed", {"is_on": True, "speed": 70}),
+        ("fan_living_room", 0, "set_speed", {"is_on": False, "speed": 0}),
+        ("ac_bedroom", 22, "set_temperature", {"is_on": False, "target_temperature_c": 22}),
+        ("ac_bedroom", 16, "set_temperature", {"is_on": False, "target_temperature_c": 16}),
+    ],
+)
+def test_pinch_release_sets_fan_speed_or_ac_temperature(
+    client: TestClient, device_id: str, value: int, action: str, state: dict
+) -> None:
+    response = pinch(client, device_id, value)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["gesture_event"]["gesture"], body["gesture_event"]["value"]) == ("PINCH", value)
+    assert (body["device_event"]["action"], body["device_event"]["value"], body["device_event"]["source"]) == (
+        action,
+        value,
+        "gesture",
+    )
+    assert body["device"]["state"] == state
+    assert len(client.get(f"{API}/events").json()) == 1  # exactly one command
+
+
+@pytest.mark.parametrize(("device_id", "value"), [("ac_bedroom", 31), ("ac_bedroom", 15), ("fan_living_room", 101)])
+def test_pinch_values_outside_the_device_range_are_refused(client: TestClient, device_id: str, value: int) -> None:
+    response = pinch(client, device_id, value)
+    assert (response.status_code, response.json()["error"]["code"]) == (422, "invalid_command")
+    assert client.get(f"{API}/events").json() == []
+
+
+def test_door_never_receives_an_adjust_command(client: TestClient) -> None:
+    response = pinch(client, "door_main", 1)
+
+    assert (response.status_code, response.json()["error"]["code"]) == (400, "intent_not_applicable")
+    assert client.get(f"{API}/devices/door_main").json()["state"]["is_locked"] is True
+    assert client.get(f"{API}/events").json() == []
+    assert client.get(f"{API}/gestures/events").json()[0]["outcome"] == "rejected"
+
+
+def test_low_confidence_pinch_is_rejected(client: TestClient) -> None:
+    assert pinch(client, "fan_living_room", 70, confidence=0.5).status_code == 422
     assert client.get(f"{API}/events").json() == []

@@ -1,17 +1,16 @@
 /**
- * Pinch-to-adjust, prepared but not wired to the camera yet (the five existing gestures and
- * the 0.6 s stabilizer are unchanged).
+ * Pinch-to-adjust (the five existing gestures and the 0.6 s stabilizer are unchanged).
  *
- * Planned interaction: ONE_FINGER selects a device → PINCH enters adjustment → moving the
- * hand up/down only *previews* the value → releasing the pinch sends ONE command
- * (intent ADJUST, which the backend resolves to SET_SPEED for a fan, SET_TEMPERATURE for an
- * AC, SET_BRIGHTNESS for a light, and never to the door). Nothing is sent per frame.
+ * ONE_FINGER selects a device → PINCH enters adjustment → moving the hand up/down only
+ * *previews* the value → releasing the pinch sends ONE command (gesture PINCH, intent
+ * ADJUST, which the backend resolves to SET_SPEED for a fan, SET_TEMPERATURE for an AC,
+ * SET_BRIGHTNESS for a light, and never to the door). Nothing is sent per frame.
  */
 
 const ADJUSTABLE = {
-  set_speed: { direction: 1, label: 'speed', unit: '%' }, // hand up → faster
-  set_temperature: { direction: -1, label: 'target', unit: ' °C' }, // hand up → cooler
-  set_brightness: { direction: 1, label: 'brightness', unit: '%' },
+  set_speed: { direction: 1, label: 'speed', unit: '%', title: 'Fan Speed', up: 'faster', down: 'slower' },
+  set_temperature: { direction: -1, label: 'target', unit: ' °C', title: 'AC Temperature', up: 'cooler', down: 'warmer' },
+  set_brightness: { direction: 1, label: 'brightness', unit: '%', title: 'Brightness', up: 'brighter', down: 'dimmer' },
 }
 
 /** The adjustable value of a device, from the ranges the backend publishes, or null. */
@@ -65,4 +64,69 @@ export function createAdjustment(device, startY) {
       return value === startValue ? null : { intent: 'ADJUST', value, targetDeviceId: device.id }
     },
   }
+}
+
+/**
+ * Turns pinch events into adjustment state for the UI and at most ONE command per pinch.
+ * `send(command)` is only ever called on release, with the final value; every `move` just
+ * updates the preview. The device comes from backend state (`getDevice`), so the start
+ * value is the confirmed one, and the door (no adjustable value) never enters adjustment.
+ */
+export function createAdjustmentController({ getDevice, send, onChange = () => {} }) {
+  let active = null // { adjustment, device, confidence }
+
+  const emit = (state) => onChange(state)
+
+  return {
+    get active() {
+      return active !== null
+    },
+    handle(event) {
+      if (event.type === 'start') {
+        const device = getDevice()
+        const adjustment = device ? createAdjustment(device, event.y) : null
+        if (!adjustment) {
+          active = null
+          emit({ status: 'unsupported', deviceName: device?.name ?? null })
+          return
+        }
+        active = { adjustment, device, confidence: event.confidence }
+        const value = adjustment.update(event.y)
+        emit({ status: 'adjusting', deviceId: device.id, deviceName: device.name, range: adjustment.range, startValue: value, value })
+        return
+      }
+      if (!active) return
+      if (event.type === 'move') {
+        const value = active.adjustment.update(event.y)
+        emit({ status: 'adjusting', value })
+        return
+      }
+      const { adjustment, device } = active
+      active = null
+      if (event.type === 'cancel') {
+        adjustment.cancel()
+        emit({ status: 'cancelled' })
+        return
+      }
+      // end: release → exactly one command, or none if the value did not change
+      const command = adjustment.release()
+      if (!command) {
+        emit({ status: 'unchanged' })
+        return
+      }
+      emit({ status: 'sending', value: command.value })
+      send({ ...command, gesture: 'PINCH', confidence: event.confidence, deviceName: device.name })
+    },
+    cancel() {
+      if (active) {
+        active.adjustment.cancel()
+        active = null
+      }
+    },
+  }
+}
+
+/** "60%", "22 °C". */
+export function formatAdjustment(range, value) {
+  return value == null || !range ? '—' : `${value}${range.unit}`
 }

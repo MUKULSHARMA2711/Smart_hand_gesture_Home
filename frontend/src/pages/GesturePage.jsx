@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { AdjustmentPanel } from '../components/gestures/AdjustmentPanel'
 import { CameraPanel } from '../components/gestures/CameraPanel'
 import { DetectionPanel } from '../components/gestures/DetectionPanel'
 import { GestureGuide } from '../components/gestures/GestureGuide'
@@ -27,6 +28,7 @@ export function GesturePage() {
     active: cameraOn,
     threshold: control.config.confidenceThreshold,
     onCommit: control.execute,
+    onPinch: control.onPinch,
     restartKey: attempt,
   })
 
@@ -66,6 +68,12 @@ export function GesturePage() {
             <div className="scene-frame h-90">
               <HouseView selectedId={control.selectedId} onSelect={(id) => id && control.setSelectedId(id)} compact showGestureInput />
               <OrbStatus state={orbState} className="absolute top-3 right-3" />
+              {control.adjustment?.status === 'adjusting' && (
+                <p className="scene-sensors absolute bottom-3 left-3" aria-hidden="true">
+                  {control.adjustment.deviceName} · {control.adjustment.range.title}: {control.adjustment.value}
+                  {control.adjustment.range.unit} (preview)
+                </p>
+              )}
             </div>
             <p className="mt-3 text-xs text-slate-400">
               Confirmed gestures send a command beam from the gesture input to the selected device. The device changes
@@ -81,6 +89,7 @@ export function GesturePage() {
             intents={control.config.intents}
           />
           <TargetSelector devices={devices} selectedId={control.selectedId} onSelect={control.setSelectedId} />
+          <AdjustmentPanel adjustment={control.adjustment} />
           <LastActionPanel lastAction={control.lastAction} deviceNames={deviceNames} />
           <GestureGuide intents={control.config.intents} blockedActions={control.config.blockedActions} />
         </div>

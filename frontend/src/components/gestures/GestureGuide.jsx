@@ -6,6 +6,7 @@ const GUIDE = [
   { gesture: 'OPEN_PALM', symbol: '✋', pose: 'All fingers spread' },
   { gesture: 'ONE_FINGER', symbol: '☝️', pose: 'Index finger up' },
   { gesture: 'TWO_FINGERS', symbol: '✌️', pose: 'Index and middle fingers up' },
+  { gesture: 'PINCH', symbol: '👌', pose: 'Pinch thumb and index (other fingers open), move up/down, release' },
 ]
 
 // Gestures only control powered devices; door locks need an explicit lock/unlock request.
@@ -15,6 +16,7 @@ const INTENT_EFFECTS = {
   STOP: 'Stop: turn off',
   SELECT: 'Next device',
   TOGGLE: 'Flip on/off',
+  ADJUST: 'Fan speed / AC temperature, applied on release',
 }
 
 export function GestureGuide({ intents, blockedActions }) {

@@ -17,6 +17,9 @@ class Gesture(StrEnum):
     OPEN_PALM = "OPEN_PALM"
     ONE_FINGER = "ONE_FINGER"
     TWO_FINGERS = "TWO_FINGERS"
+    # Thumb + index pinched, other fingers open: hold and move to adjust, release to apply.
+    # Sent once, on release, with the final value.
+    PINCH = "PINCH"
     NEUTRAL = "NEUTRAL"  # no hand in view
     UNKNOWN = "UNKNOWN"  # hand in view, no gesture recognised
 
@@ -29,6 +32,7 @@ GESTURE_INTENTS: Mapping[Gesture, Intent] = MappingProxyType(
         Gesture.OPEN_PALM: Intent.STOP,
         Gesture.ONE_FINGER: Intent.SELECT,
         Gesture.TWO_FINGERS: Intent.TOGGLE,
+        Gesture.PINCH: Intent.ADJUST,  # fan → set_speed, AC → set_temperature; never a lock
         Gesture.NEUTRAL: Intent.NONE,
         Gesture.UNKNOWN: Intent.NONE,
     }
