@@ -21,6 +21,14 @@ export const STATUS_STYLES = {
   answered: { icon: '✓', label: 'Answered', tone: 'text-sky-700 dark:text-sky-400' },
   rejected: { icon: '✗', label: 'Rejected', tone: 'text-red-700 dark:text-red-400' },
   failed: { icon: '✗', label: 'Failed', tone: 'text-red-700 dark:text-red-400' },
+  awaiting_confirmation: { icon: '?', label: 'Waiting for confirmation', tone: 'text-amber-700 dark:text-amber-300' },
+  cancelled: { icon: '–', label: 'Cancelled', tone: 'text-slate-500 dark:text-slate-400' },
+}
+
+/** Seconds left before a held unlock expires (0 when expired). The backend enforces it. */
+export function confirmationSecondsLeft(confirmation, now = Date.now()) {
+  if (!confirmation) return 0
+  return Math.max(0, Math.ceil((new Date(confirmation.expires_at).getTime() - now) / 1000))
 }
 
 /** "Living Room Fan → ON", "Living Room Fan speed → 70%", "Home status checked". */

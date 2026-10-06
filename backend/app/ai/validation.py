@@ -28,6 +28,7 @@ class ValidatedAction:
     parameters: dict[str, Any] = field(default_factory=dict)
     command: DeviceCommand | None = None  # set for executable device actions
     capability: Capability | None = None
+    requires_confirmation: bool = False  # valid, but held until the user explicitly confirms
     rejection_code: str | None = None
     rejection_reason: str | None = None
 
@@ -65,7 +66,7 @@ class PlanValidator:
             validated.append(result)
         return validated
 
-    def validate(self, index: int, raw: Any, utterance: str) -> ValidatedAction:
+    def validate(self, index: int, raw: Any, utterance: str, *, confirmed: bool = False) -> ValidatedAction:
         result = ValidatedAction(index=index, raw=raw)
 
         try:
@@ -114,13 +115,18 @@ class PlanValidator:
 
         capability = self._resolver.capability_for(action.intent, device)
         decision = self._policy.evaluate(
-            capability=capability, device_id=device.id, source=CommandSource.AI_AGENT, utterance=utterance
+            capability=capability,
+            device_id=device.id,
+            source=CommandSource.AI_AGENT,
+            utterance=utterance,
+            confirmed=confirmed,
         )
         if not decision.allowed:
             return self._reject(result, decision.code or "policy_denied", decision.reason or "Denied by policy.")
 
         result.command = command
         result.capability = capability
+        result.requires_confirmation = decision.requires_confirmation
         return result
 
     @staticmethod

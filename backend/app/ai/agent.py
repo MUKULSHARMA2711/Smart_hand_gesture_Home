@@ -12,13 +12,16 @@ All actions are validated before any of them executes.
 
 import asyncio
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import NoReturn
 
 from pydantic import ValidationError
 
-from app.ai.errors import AIUnavailableError
+from app.ai.confirmation import ConfirmationStore, Reply, classify_reply
+from app.ai.errors import AIUnavailableError, ConfirmationExpiredError, ConfirmationNotFoundError
 from app.ai.history import InMemoryAgentHistory
-from app.ai.models import ActionPlan, ActionResult, ActionStatus, AgentResponse
+from app.ai.models import ActionPlan, ActionResult, ActionStatus, AgentResponse, PendingConfirmation
 from app.ai.providers.base import AIProvider, AIProviderError, PlanningRequest
 from app.ai.tools import AgentTools, ToolSession
 from app.ai.validation import PlanValidator, ValidatedAction
@@ -38,18 +41,61 @@ class HomeAgent:
         history: InMemoryAgentHistory,
         *,
         timeout_s: float = 120.0,
+        confirmation_timeout_s: float = 30.0,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._provider = provider
         self._tools = tools
         self._validator = validator
         self._history = history
         self._timeout_s = timeout_s
+        self._confirmation_timeout = timedelta(seconds=confirmation_timeout_s)
+        self._clock = clock
+        self._confirmations = ConfirmationStore()
 
     @property
     def provider(self) -> AIProvider:
         return self._provider
 
     async def handle(self, message: str) -> AgentResponse:
+        pending = self._confirmations.pending
+        if pending is not None:
+            reply = classify_reply(message)
+            if pending.expires_at <= self._clock():
+                self._confirmations.clear()
+                if reply is Reply.CONFIRM:  # "yes, unlock it" too late: never execute it
+                    return self._closed(pending, message, expired=True)
+            elif reply is Reply.CONFIRM:
+                return await self._confirm(pending, message)
+            elif reply is Reply.CANCEL:
+                return self._closed(pending, message, expired=False)
+            elif reply is Reply.AFFIRM_ONLY:
+                name = self._device_name(pending)
+                return self._finish(
+                    message,
+                    reply=f"To unlock the {name}, say 'yes, unlock it'. Say 'cancel' to keep it locked.",
+                    results=[self._held_result(pending, ActionStatus.AWAITING_CONFIRMATION)],
+                    plan_valid=True,
+                    confirmation=pending,
+                )
+            else:
+                self._confirmations.clear()  # the user moved on: the unlock is dropped, not kept waiting
+        return await self._plan_and_execute(message)
+
+    async def decide(self, confirmation_id: str, confirm: bool) -> AgentResponse:
+        """The confirm / cancel buttons: same checks and execution path as a spoken reply."""
+        pending = self._confirmations.pending
+        if pending is None or pending.confirmation_id != confirmation_id:
+            raise ConfirmationNotFoundError(confirmation_id)
+        name = self._device_name(pending)
+        if pending.expires_at <= self._clock():
+            self._closed(pending, f"Confirm unlock of the {name}", expired=True)
+            raise ConfirmationExpiredError(confirmation_id)
+        if confirm:
+            return await self._confirm(pending, f"Confirmed: unlock the {name}")
+        return self._closed(pending, f"Cancelled: unlock the {name}", expired=False)
+
+    async def _plan_and_execute(self, message: str) -> AgentResponse:
         context = self._tools.home_context()
         session = self._tools.session(context)
         history = tuple(self._history.recent(limit=3))
@@ -79,13 +125,81 @@ class HomeAgent:
         validated = self._validator.validate_all(plan.actions, message)
         results: list[ActionResult] = []
         device_events: list[DeviceEvent] = []
+        confirmation: PendingConfirmation | None = None
         for item in validated:
+            if item.requires_confirmation and not item.rejected:
+                confirmation = self._hold(item, message)
+                results.append(self._held_result(confirmation, ActionStatus.AWAITING_CONFIRMATION))
+                continue
             result, event = await self._execute(item, session)
             results.append(result)
             if event is not None:
                 device_events.append(event)
 
-        return self._finish(message, reply=plan.message, results=results, device_events=device_events, plan_valid=True)
+        # The planner's text may say "I'll unlock it"; while the unlock is held, ask instead.
+        reply = confirmation.prompt if confirmation else plan.message
+        return self._finish(
+            message, reply=reply, results=results, device_events=device_events, plan_valid=True, confirmation=confirmation
+        )
+
+    # --- Confirmation of security-sensitive actions ---------------------------------------
+
+    def _hold(self, item: ValidatedAction, message: str) -> PendingConfirmation:
+        assert item.action is not None and item.action.device_id is not None
+        now = self._clock()
+        name = self._tools.home.devices.get(item.action.device_id).name
+        pending = PendingConfirmation(
+            device_id=item.action.device_id,
+            intent=str(item.action.intent),
+            prompt=f"Are you sure you want to unlock the {name}? Say 'yes, unlock it' to confirm, or 'cancel'.",
+            request=message,
+            created_at=now,
+            expires_at=now + self._confirmation_timeout,
+        )
+        self._confirmations.hold(pending, item.raw)
+        logger.info("held %s on %s for confirmation until %s", pending.intent, pending.device_id, pending.expires_at)
+        return pending
+
+    async def _confirm(self, pending: PendingConfirmation, message: str) -> AgentResponse:
+        raw_action = self._confirmations.raw_action
+        self._confirmations.clear()  # one confirmation executes at most once
+        # Re-validate now (device, capability, and the policy on the original explicit request);
+        # only the confirmation step is satisfied. Execution is the normal CommandService path.
+        item = self._validator.validate(0, raw_action, pending.request, confirmed=True)
+        session = self._tools.session(self._tools.home_context())
+        result, event = await self._execute(item, session)
+        name = self._device_name(pending)
+        if result.status is ActionStatus.EXECUTED:
+            reply = f"Confirmed. The {name} is unlocked."
+        else:
+            reply = f"The {name} was not unlocked: {result.reason}"
+        return self._finish(message, reply=reply, results=[result], device_events=[event] if event else [], plan_valid=True)
+
+    def _closed(self, pending: PendingConfirmation, message: str, *, expired: bool) -> AgentResponse:
+        self._confirmations.clear()
+        name = self._device_name(pending)
+        if expired:
+            reply = f"The request to unlock the {name} expired, so it stays locked. Ask again if you still want it unlocked."
+        else:
+            reply = f"Cancelled. The {name} stays locked."
+        result = self._held_result(pending, ActionStatus.CANCELLED)
+        result.code = "confirmation_expired" if expired else "cancelled_by_user"
+        return self._finish(message, reply=reply, results=[result], plan_valid=True)
+
+    def _held_result(self, pending: PendingConfirmation, status: ActionStatus) -> ActionResult:
+        awaiting = status is ActionStatus.AWAITING_CONFIRMATION
+        return ActionResult(
+            index=0,
+            device_id=pending.device_id,
+            intent=pending.intent,
+            status=status,
+            code="confirmation_required" if awaiting else None,
+            reason=pending.prompt if awaiting else None,
+        )
+
+    def _device_name(self, pending: PendingConfirmation) -> str:
+        devices = self._tools.home.devices
+        return devices.get(pending.device_id).name if pending.device_id in devices else pending.device_id
 
     def _unavailable(self, message: str, reason: str) -> NoReturn:
         """Record the failed attempt (nothing executed), then report it as a structured error."""
@@ -158,6 +272,7 @@ class HomeAgent:
         device_events: list[DeviceEvent] | None = None,
         plan_valid: bool = False,
         errors: list[str] | None = None,
+        confirmation: PendingConfirmation | None = None,
     ) -> AgentResponse:
         results = results or []
         device_events = device_events or []
@@ -172,6 +287,7 @@ class HomeAgent:
             changed_devices=list(dict.fromkeys(e.device_id for e in device_events if e.previous_state != e.new_state)),
             any_rejected=any(r.status is ActionStatus.REJECTED for r in results) or not plan_valid,
             errors=errors or [],
+            confirmation=confirmation,
         )
         self._history.append(response)
         logger.info(
@@ -193,6 +309,10 @@ def _outcome(results: list[ActionResult], plan_valid: bool) -> str:
         f"{counts[ActionStatus.ANSWERED]} answered" if counts[ActionStatus.ANSWERED] else "",
         f"{counts[ActionStatus.REJECTED]} rejected" if counts[ActionStatus.REJECTED] else "",
         f"{counts[ActionStatus.FAILED]} failed" if counts[ActionStatus.FAILED] else "",
+        f"{counts[ActionStatus.AWAITING_CONFIRMATION]} awaiting confirmation"
+        if counts[ActionStatus.AWAITING_CONFIRMATION]
+        else "",
+        f"{counts[ActionStatus.CANCELLED]} cancelled" if counts[ActionStatus.CANCELLED] else "",
     ]
     return ", ".join(p for p in parts if p).capitalize() + "."
 

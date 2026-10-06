@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.ai.errors import AIUnavailableError
+from app.ai.errors import AIUnavailableError, ConfirmationExpiredError, ConfirmationNotFoundError
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.domain.errors import (
     DeviceNotFoundError,
@@ -43,6 +43,8 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     InvalidFeatureError: 422,
     MLUnavailableError: 503,
     AIUnavailableError: 503,
+    ConfirmationNotFoundError: 404,
+    ConfirmationExpiredError: 410,
 }
 
 _HTTP_CODES = {404: "not_found", 405: "method_not_allowed"}

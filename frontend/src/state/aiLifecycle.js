@@ -19,16 +19,19 @@ export function executedCount(response) {
   return (response?.actions ?? []).filter((action) => action.status === 'executed').length
 }
 
-/** Animated actions: every result that targets a device (executed, rejected or failed). */
+const NOT_SENT = new Set(['answered', 'awaiting_confirmation', 'cancelled'])
+
+/** Animated actions: results that reached for a device (executed, rejected or failed). A held
+ * or cancelled unlock sends nothing, so it gets no command beam. */
 export function visualizedActions(response) {
-  return (response?.actions ?? []).filter((action) => action.device_id && action.status !== 'answered')
+  return (response?.actions ?? []).filter((action) => action.device_id && !NOT_SENT.has(action.status))
 }
 
 export function resultPhase(response) {
   if (!response || !response.plan_valid || (response.errors ?? []).length) return 'error'
   const actions = response.actions ?? []
   if (actions.some((a) => a.status === 'failed')) return 'error'
-  const succeeded = actions.some((a) => a.status === 'executed' || a.status === 'answered')
+  const succeeded = actions.some((a) => ['executed', 'answered', 'awaiting_confirmation', 'cancelled'].includes(a.status))
   if (actions.length && !succeeded) return 'error' // everything was rejected
   return 'success'
 }

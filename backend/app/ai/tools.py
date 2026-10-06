@@ -49,6 +49,11 @@ class AgentTools:
 
     # --- Read-only tools ---------------------------------------------------------------
 
+    @property
+    def home(self) -> HomeState:
+        """Read access for the agent (device names); changes still go through control_device."""
+        return self._home
+
     def home_context(self) -> HomeContext:
         """Full context for a request, including ML insights computed once from the same snapshot."""
         return build_home_context(self._home, self._events, ml=self._ml)

@@ -89,6 +89,10 @@ def test_example_e_unlock_the_front_door(client: TestClient) -> None:
     body = ask(client, "Unlock the front door.")
 
     assert planned(body) == [(DOOR, "UNLOCK_DOOR", {})]
+    assert body["actions"][0]["status"] == "awaiting_confirmation"  # held until the user confirms
+    assert states(client)[DOOR]["is_locked"] is True
+
+    ask(client, "Yes, unlock it.")
     assert states(client)[DOOR]["is_locked"] is False
 
 
@@ -226,7 +230,8 @@ def test_negated_unlock_requests_do_not_unlock_the_door(client: TestClient, mess
 
 
 def test_explicit_unlock_still_works(client: TestClient) -> None:
-    body = ask(client, "unlock the front door")
+    ask(client, "unlock the front door")
+    body = ask(client, "yes, unlock it")
 
     assert [(a["intent"], a["status"]) for a in body["actions"]] == [("UNLOCK_DOOR", "executed")]
     assert states(client)[DOOR]["is_locked"] is False

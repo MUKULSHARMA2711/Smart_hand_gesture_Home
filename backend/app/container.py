@@ -145,9 +145,17 @@ def build_container(
     agent = HomeAgent(
         provider=ai_provider or build_ai_provider(settings),
         tools=AgentTools(home_state, event_store, command_service, ml_service),
-        validator=PlanValidator(registry, resolver, SecurityPolicy(allow_ai_unlock=settings.ai_allow_unlock)),
+        validator=PlanValidator(
+            registry,
+            resolver,
+            SecurityPolicy(
+                allow_ai_unlock=settings.ai_allow_unlock,
+                require_unlock_confirmation=settings.ai_unlock_requires_confirmation,
+            ),
+        ),
         history=agent_history,
         timeout_s=settings.ai_request_timeout_s,
+        confirmation_timeout_s=settings.ai_confirmation_timeout_s,
     )
 
     return Container(

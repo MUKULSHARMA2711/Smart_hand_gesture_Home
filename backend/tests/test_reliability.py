@@ -351,6 +351,7 @@ def test_each_source_produces_exactly_the_events_that_happened(client: TestClien
     client.post(f"{API}/devices/{FAN}/command", json={"action": "turn_on"})
     client.post(f"{API}/gestures/commands", json={**gesture, "confidence": 0.95})
     client.post(f"{API}/ai/command", json={"message": "unlock the front door"})
+    client.post(f"{API}/ai/command", json={"message": "yes, unlock it"})  # the explicit confirmation
     client.post(f"{API}/ml/anomalies/check", json={"device_id": FAN, "power_w": 400})
 
     events = list(reversed(client.get(f"{API}/events").json()))

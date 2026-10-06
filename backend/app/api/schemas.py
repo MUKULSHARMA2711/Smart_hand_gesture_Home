@@ -1,7 +1,7 @@
 """Request/response models specific to the HTTP API."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -98,6 +98,14 @@ class AICommandRequest(BaseModel):
         if not value.strip():
             raise ValueError("Message must not be blank.")
         return value.strip()
+
+
+class ConfirmationDecision(BaseModel):
+    """The user's answer to a held security-sensitive action (the confirm / cancel buttons)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["confirm", "cancel"]
 
 
 class DeviceCapabilities(BaseModel):

@@ -131,8 +131,16 @@ export function AssistantPage() {
             </p>
           ) : (
             <ol className="space-y-5 pb-2" aria-live="polite">
-              {assistant.turns.map((turn) => (
-                <ChatTurn key={turn.interaction_id} turn={turn} devicesById={devicesById} deviceNames={deviceNames} />
+              {assistant.turns.map((turn, index) => (
+                <ChatTurn
+                  key={turn.interaction_id}
+                  turn={turn}
+                  devicesById={devicesById}
+                  deviceNames={deviceNames}
+                  isLatest={index === assistant.turns.length - 1}
+                  busy={assistant.sending}
+                  onDecide={assistant.decide}
+                />
               ))}
             </ol>
           )}

@@ -531,8 +531,34 @@ lights and unlock the door" still unlocks, because the negation belongs to the o
 clause.
 
 This is a rule-based check, not language understanding: a negation that comes *after*
-the verb ("unlock the door… not!") is not detected. A later phase should add explicit
-confirmation for door actions.
+the verb ("unlock the door… not!") is not detected. That is why unlocking also needs an
+explicit confirmation.
+
+### Unlocking needs an explicit confirmation
+
+An explicit, non-negated AI request to unlock ("unlock the main door") is **held**, not
+executed:
+
+1. The policy marks the action `requires_confirmation`, and the agent replies "Are you sure
+   you want to unlock the Main Door? Say 'yes, unlock it' to confirm, or 'cancel'." The
+   action has status `awaiting_confirmation`, and the response carries a `confirmation`
+   (id, prompt, `expires_at`).
+2. **Confirm:** reply "yes, unlock it" (or "confirm"), or press **Confirm unlock**, which
+   calls `POST /api/v1/ai/confirmations/{id}` with `{"decision": "confirm"}`. The action is
+   re-validated (device, capability, policy) and executed once, through the normal
+   CommandService path (`source=ai_agent`).
+3. **Cancel:** say any negation or cancel word ("no", "cancel", "don't unlock it"), or
+   press **Cancel**. A bare "yes" is not enough: the assistant repeats the exact phrase and
+   keeps waiting.
+4. **Expiry:** after `SMARTHOME_AI_CONFIRMATION_TIMEOUT_S` (default 30 s) the unlock is
+   cancelled. A late "yes, unlock it" is answered with "expired", and the button returns
+   `410 confirmation_expired`.
+5. **Other requests:** any other request drops the pending unlock.
+
+Locking needs no confirmation. Gestures still cannot unlock. The direct dashboard control
+is the user's own action and is unchanged.
+`SMARTHOME_AI_UNLOCK_REQUIRES_CONFIRMATION=false` restores immediate execution of explicit
+requests; `SMARTHOME_AI_ALLOW_UNLOCK=false` still forbids AI unlocking entirely.
 
 ### Example commands (mock provider)
 

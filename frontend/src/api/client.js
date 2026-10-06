@@ -63,6 +63,14 @@ export const api = {
   aiCommand: (message) =>
     request('/ai/command', { method: 'POST', body: JSON.stringify({ message }), timeoutMs: AI_REQUEST_TIMEOUT_MS }),
 
+  /** Answer a held security-sensitive action (door unlock): 'confirm' or 'cancel'. */
+  decideConfirmation: (confirmationId, decision) =>
+    request(`/ai/confirmations/${encodeURIComponent(confirmationId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
+      timeoutMs: AI_REQUEST_TIMEOUT_MS,
+    }),
+
   getAIStatus: () => request('/ai/status'),
 
   getAIHistory: (limit = 20) => request(`/ai/history?limit=${limit}`),

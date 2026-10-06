@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     ai_request_timeout_s: float = Field(default=120.0, gt=0)  # whole plan, including tool rounds
     # Explicit "unlock the front door" requests are allowed for the AI agent; set False to forbid.
     ai_allow_unlock: bool = True
+    # An explicit AI unlock is held until the user confirms ("yes, unlock it" or the button).
+    ai_unlock_requires_confirmation: bool = True
+    ai_confirmation_timeout_s: float = Field(default=30.0, gt=0, le=300)
     ai_history_max_size: int = Field(default=100, ge=1)
 
     # Machine learning (trained at startup on deterministic simulated data)

@@ -184,7 +184,10 @@ async def test_door_lock_proposed_for_an_indirect_request_is_rejected() -> None:
 
 async def test_explicit_lock_and_unlock_are_executed() -> None:
     h = Harness(plan(action("door_main", "UNLOCK_DOOR")))
-    assert (await h.ask("Unlock the front door")).actions[0].status is ActionStatus.EXECUTED
+    # Unlocking is held for an explicit confirmation, then executed through CommandService.
+    assert (await h.ask("Unlock the front door")).actions[0].status is ActionStatus.AWAITING_CONFIRMATION
+    assert h.state("door_main")["is_locked"] is True
+    assert (await h.ask("Yes, unlock it")).actions[0].status is ActionStatus.EXECUTED
     assert h.state("door_main")["is_locked"] is False
 
     h.provider._plan = plan(action("door_main", "LOCK_DOOR"))

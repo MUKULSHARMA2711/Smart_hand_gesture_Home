@@ -81,6 +81,8 @@ class ActionStatus(StrEnum):
     ANSWERED = "answered"  # read-only query
     REJECTED = "rejected"  # failed validation/policy; never executed
     FAILED = "failed"  # passed validation but the device command failed
+    AWAITING_CONFIRMATION = "awaiting_confirmation"  # valid security-sensitive action held for "yes"
+    CANCELLED = "cancelled"  # a held action the user cancelled, or whose confirmation expired
 
 
 class ActionResult(BaseModel):
@@ -98,6 +100,18 @@ class ActionResult(BaseModel):
     data: Any = None
 
 
+class PendingConfirmation(BaseModel):
+    """A security-sensitive action (door unlock) waiting for the user's explicit confirmation."""
+
+    confirmation_id: str = Field(default_factory=lambda: str(uuid4()))
+    device_id: str
+    intent: str
+    prompt: str
+    request: str  # the user's original words, re-checked by the policy on confirmation
+    created_at: datetime
+    expires_at: datetime
+
+
 class AgentResponse(BaseModel):
     interaction_id: str = Field(default_factory=lambda: str(uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -111,3 +125,5 @@ class AgentResponse(BaseModel):
     changed_devices: list[str] = Field(default_factory=list)
     any_rejected: bool = False
     errors: list[str] = Field(default_factory=list)
+    # Set while an action waits for "yes, unlock it" (or the confirm button) before it expires.
+    confirmation: PendingConfirmation | None = None

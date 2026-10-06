@@ -6,7 +6,8 @@ user's *own words* explicitly ask for it — checked here in code, independently
 LLM, so an indirect request ("I'm leaving home") or a mistaken/manipulated plan can
 never lock or unlock the door.
 
-The decision object leaves room for authentication / confirmation in a later phase.
+An explicitly requested unlock is additionally held for confirmation (``requires_confirmation``):
+the agent asks "Are you sure?" and only executes after an explicit confirmation.
 """
 
 import re
@@ -54,8 +55,9 @@ ALLOW = PolicyDecision(allowed=True)
 
 
 class SecurityPolicy:
-    def __init__(self, *, allow_ai_unlock: bool = True) -> None:
+    def __init__(self, *, allow_ai_unlock: bool = True, require_unlock_confirmation: bool = True) -> None:
         self._allow_ai_unlock = allow_ai_unlock
+        self._require_unlock_confirmation = require_unlock_confirmation
 
     def evaluate(
         self,
@@ -64,6 +66,7 @@ class SecurityPolicy:
         device_id: str,
         source: CommandSource,
         utterance: str | None = None,
+        confirmed: bool = False,
     ) -> PolicyDecision:
         if capability not in SECURITY_SENSITIVE_CAPABILITIES or source is not CommandSource.AI_AGENT:
             return ALLOW
@@ -83,5 +86,12 @@ class SecurityPolicy:
                     f"Door actions need an explicit request. Ask me to '{verb} the front door' "
                     f"if you want '{device_id}' {verb}ed."
                 ),
+            )
+        if capability is Capability.UNLOCK and self._require_unlock_confirmation and not confirmed:
+            return PolicyDecision(
+                allowed=True,
+                code="confirmation_required",
+                reason=f"Unlocking '{device_id}' needs an explicit confirmation.",
+                requires_confirmation=True,
             )
         return ALLOW

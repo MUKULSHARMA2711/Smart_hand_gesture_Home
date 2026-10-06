@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from app.ai.models import AI_INTENTS, AgentResponse
 from app.ai.providers import MockAIProvider
 from app.api.deps import AgentDep, AgentHistoryDep, ContainerDep, HomeStateDep
-from app.api.schemas import AICommandRequest, AIStatusResponse, DeviceCapabilities
+from app.api.schemas import AICommandRequest, AIStatusResponse, ConfirmationDecision, DeviceCapabilities, ErrorResponse
 from app.domain.policy import SECURITY_SENSITIVE_CAPABILITIES
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -21,6 +21,21 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 )
 async def ai_command(request: AICommandRequest, agent: AgentDep) -> AgentResponse:
     return await agent.handle(request.message)
+
+
+@router.post(
+    "/confirmations/{confirmation_id}",
+    response_model=AgentResponse,
+    summary="Confirm or cancel a held security-sensitive action (door unlock)",
+    description="Equivalent to answering 'yes, unlock it' or 'cancel'. A confirmed action is re-validated "
+    "and executed through the CommandService (source=ai_agent).",
+    responses={
+        404: {"model": ErrorResponse, "description": "No pending confirmation with this id"},
+        410: {"model": ErrorResponse, "description": "The confirmation expired; nothing was executed"},
+    },
+)
+async def decide_confirmation(confirmation_id: str, request: ConfirmationDecision, agent: AgentDep) -> AgentResponse:
+    return await agent.decide(confirmation_id, confirm=request.decision == "confirm")
 
 
 @router.get("/status", response_model=AIStatusResponse, summary="AI provider and capability model")
@@ -43,6 +58,8 @@ async def ai_status(agent: AgentDep, home: HomeStateDep, container: ContainerDep
             "security_sensitive_capabilities": sorted(SECURITY_SENSITIVE_CAPABILITIES),
             "requires_explicit_request": True,
             "allow_unlock": container.settings.ai_allow_unlock,
+            "unlock_requires_confirmation": container.settings.ai_unlock_requires_confirmation,
+            "confirmation_timeout_s": container.settings.ai_confirmation_timeout_s,
         },
     )
 
