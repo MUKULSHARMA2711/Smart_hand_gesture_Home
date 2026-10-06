@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { createAdjustmentController } from '../gestures/adjustment'
 import { createDoorUnlockController } from '../gestures/doorUnlock'
+import { routePinch } from '../gestures/pinchRouting'
 import { DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_GESTURE_INTENTS } from '../gestures/types'
 
 const HISTORY_LIMIT = 15
@@ -155,9 +156,11 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       },
     })
   }
-  // Door selected: pinches request / confirm the unlock. Otherwise they adjust the fan / AC.
+  // The selected device decides first: the door (or a pending unlock) gets the pinch, and only
+  // the fan / AC go to the adjustment.
   const onPinch = useCallback((event) => {
-    if (!unlock.current.pinch(event)) adjuster.current.handle(event)
+    const device = devicesRef.current.find((d) => d.id === selectedIdRef.current) ?? null
+    routePinch(event, { device, unlock: unlock.current, adjuster: adjuster.current })
   }, [])
   const cancelUnlock = useCallback((reason) => unlock.current.cancel(reason), [])
 

@@ -93,6 +93,10 @@ export function createDoorUnlockController({
     get pending() {
       return pending !== null
     },
+    /** A request or confirmation is pending or in flight: every pinch belongs to the door. */
+    get busy() {
+      return pending !== null || requesting || confirming
+    },
     get state() {
       return state
     },
