@@ -1,5 +1,5 @@
 /**
- * Browser voice control: "Hey IntelliHome" → command → the existing AI agent.
+ * Browser voice control: "Hey Nova" → command → the existing AI agent.
  *
  * Uses the browser's SpeechRecognition (Chrome / Edge). Only recognised *text* goes to the
  * IntelliHome backend, through the same /ai/command pipeline as typed requests, so voice
@@ -11,14 +11,10 @@
  * processing · speaking · error · unsupported.
  */
 
-// "Hey IntelliHome" as recognisers tend to transcribe it.
-// "Hey IntelliHome" as speech services actually transcribe it: "IntelliHome", "Intelli Home",
-// "intelli-home", "Intel home", "intelly home", "intelligent home"... The match is on
-// normalised words, so punctuation, case and hyphens do not matter.
+// Wake phrase: "Hey Nova". Two short, common words that speech services transcribe
+// reliably. The match is on normalised words, so punctuation, case and spacing do not matter.
 const HEY = new Set(['hey', 'hay', 'hi'])
-const INTELLI = /^(?:intel+[iye]?|intelligent)$/ // intel, intell, intelli, intelly, inteli...
-const INTELLIHOME = /^intel+[iye]?homes?$/ // intellihome, intelihome, intellyhome...
-const HOME = /^homes?$/
+const NOVA = 'nova'
 const WAKE_WORD_OFFSET = 2 // "hey" must be within the first words of an utterance
 const WAKE_JOIN_MS = 4000 // a wake phrase split across two results, joined within this time
 
@@ -36,7 +32,7 @@ function words(text) {
   return out
 }
 
-/** "Hey, Intelli-Home!" → "hey intelli home". */
+/** "Hey, Nova!  Turn-on" → "hey nova turn on". */
 export function normalizeTranscript(text) {
   return words(text)
     .map((w) => w.word)
@@ -46,7 +42,7 @@ export function normalizeTranscript(text) {
 /**
  * Whether `text` (optionally continuing `previous`, the result just before it) contains the
  * wake phrase, and the command spoken after it. "hey" must start an utterance (within its
- * first few words) and be followed directly by IntelliHome, so ordinary speech does not wake
+ * first few words) and be followed directly by "nova", so ordinary speech does not wake
  * the assistant. The command keeps the user's own wording (apostrophes, case).
  */
 export function splitWake(text, previous = '') {
@@ -58,12 +54,8 @@ export function splitWake(text, previous = '') {
     if (!HEY.has(list[i].word)) continue
     const offset = i < boundary ? i : i - boundary
     if (offset > WAKE_WORD_OFFSET) continue
-    const next = list[i + 1]?.word
-    let last = -1
-    if (next && INTELLIHOME.test(next)) last = i + 1
-    else if (next && INTELLI.test(next) && HOME.test(list[i + 2]?.word ?? '')) last = i + 2
-    if (last < 0) continue
-    return { woke: true, command: full.slice(list[last].end).replace(/^[\s,.;:!?'"-]+/, '').trim() }
+    if (list[i + 1]?.word !== NOVA) continue
+    return { woke: true, command: full.slice(list[i + 1].end).replace(/^[\s,.;:!?'"-]+/, '').trim() }
   }
   return { woke: false, command: '' }
 }
@@ -160,7 +152,7 @@ export function createVoiceSession({
 
   function handleFinal(text) {
     if (mode === 'wake') {
-      // The browser may end a result mid-phrase ("hey intelli" | "home, turn on the fan"):
+      // The browser may end a result mid-phrase ("hey" | "nova, turn on the fan"):
       // try this result together with the one just before it.
       const previous = lastFinal && now() - lastFinal.at <= WAKE_JOIN_MS ? lastFinal.text : ''
       const { woke, command } = splitWake(text, previous)
@@ -174,7 +166,7 @@ export function createVoiceSession({
       else enterCommandMode()
       return
     }
-    const { woke, command } = splitWake(text) // "Hey IntelliHome" may be repeated
+    const { woke, command } = splitWake(text) // "Hey Nova" may be repeated
     const request = woke ? command : text
     if (request) dispatch(request) // the wake phrase alone is never sent as a command
   }

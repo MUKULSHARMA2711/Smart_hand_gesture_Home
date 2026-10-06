@@ -5,7 +5,7 @@ import { useAssistantContext } from '../../state/AssistantContext'
 
 const LISTENING = new Set(['wake', 'command'])
 
-/** Hands-free voice: "Hey IntelliHome, turn on the living room fan." */
+/** Hands-free voice: "Hey Nova, turn on the living room fan." */
 export function VoicePanel({ deviceNames }) {
   const assistant = useAssistantContext()
   const voice = useVoiceAssistant({ send: assistant.send, deviceNames })
@@ -44,7 +44,7 @@ export function VoicePanel({ deviceNames }) {
       </div>
       {on && voice.heard && <p className="mt-1 truncate text-xs text-slate-400">Heard: “{voice.heard}”</p>}
       <p className="mt-2 text-[11px] text-slate-500">
-        Say “Hey IntelliHome, …”. Speech is recognised by your browser (in Chrome and Edge, by the browser's speech
+        Say “Hey Nova, …”. Speech is recognised by your browser (in Chrome and Edge, by the browser's speech
         service); only the recognised text is sent to IntelliHome. Door unlocks still need an explicit confirmation.
       </p>
     </div>

@@ -57,69 +57,61 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-describe('wake phrase', () => {
+describe('wake phrase "Hey Nova"', () => {
   it.each([
-    ['Hey IntelliHome, turn on the fan', true, 'turn on the fan'],
-    ['hey intelli home turn off the light', true, 'turn off the light'],
-    ['Hey IntelliHome.', true, ''],
-    ['turn on the fan', false, ''],
-    ['hey intelligent', false, ''],
-  ])('%s', (text, woke, command) => {
-    expect(splitWake(text)).toEqual({ woke, command })
-  })
-})
-
-describe('Edge wake-phrase variants', () => {
-  it.each([
-    ['hey intellihome', 'exact'],
-    ['Hey IntelliHome.', 'case and punctuation'],
-    ['hey intelli home', 'split word'],
-    ['hey intel home', 'Intel'],
-    ['hey intelly home', 'intelly'],
-    ['Hey intelli-home!', 'hyphen'],
-    ['Hey, Intelli. Home?', 'punctuation between words'],
-    ['hey  INTELLI   home', 'extra whitespace'],
-    ['hay intellihome', 'hey heard as hay'],
-    ['hey intelligent home', 'intelligent'],
-    ['um hey intel home', 'short filler first'],
+    ['hey nova', 'lower case'],
+    ['Hey Nova', 'title case'],
+    ['HEY NOVA', 'upper case'],
+    ['Hey, Nova!', 'punctuation'],
+    ['hey   nova.', 'extra spacing'],
+    ['Hey-Nova', 'hyphen'],
+    ['hay nova', 'hey heard as hay'],
+    ['um hey nova', 'short filler first'],
   ])('%s (%s) wakes, with no command', (text) => {
     expect(splitWake(text)).toEqual({ woke: true, command: '' })
   })
 
   it('extracts the command spoken in the same breath, keeping its wording', () => {
-    expect(splitWake('Hey Intel home, turn on the fan')).toEqual({ woke: true, command: 'turn on the fan' })
-    expect(splitWake("hey intelli-home don't unlock the door")).toEqual({ woke: true, command: "don't unlock the door" })
+    expect(splitWake('Hey Nova, turn on the fan')).toEqual({ woke: true, command: 'turn on the fan' })
+    expect(splitWake("hey nova don't unlock the door")).toEqual({ woke: true, command: "don't unlock the door" })
   })
 
   it('joins a wake phrase split across two recognition results', () => {
-    expect(splitWake('home turn on the fan', 'hey intelli')).toEqual({ woke: true, command: 'turn on the fan' })
-    expect(splitWake('intellihome', 'hey')).toEqual({ woke: true, command: '' })
+    expect(splitWake('nova turn on the fan', 'hey')).toEqual({ woke: true, command: 'turn on the fan' })
+    expect(splitWake('nova', 'hey')).toEqual({ woke: true, command: '' })
   })
 
   it.each([
     'turn on the fan',
     'hey there',
-    'hey intel how are you',
-    'they intel home office',
-    'I came home and said hey',
-    'the new intel home router is fast hey', // "hey" is not at the start of an utterance
-    'my neighbour said hey intelli home loudly yesterday', // ... nor here
-    'hey home',
+    'nova',
+    'hey novak how are you',
+    'the supernova was bright',
+    'they nova',
+    'I watched a show about nova and then said hey',
+    'my neighbour said hey nova loudly yesterday', // "hey" is not at the start of the utterance
   ])('ordinary speech does not wake: %s', (text) => {
     expect(splitWake(text).woke).toBe(false)
   })
 
+  it.each(['Hey IntelliHome', 'hey intelli home', 'Hey IntelliHome, turn on the fan'])(
+    'the old phrase "%s" no longer wakes the assistant',
+    (text) => {
+      expect(splitWake(text).woke).toBe(false)
+    },
+  )
+
   it('normalises transcripts', () => {
-    expect(normalizeTranscript('  Hey, Intelli-Home!  Turn ON the fan. ')).toBe('hey intelli home turn on the fan')
+    expect(normalizeTranscript('  Hey, Nova!  Turn ON the fan. ')).toBe('hey nova turn on the fan')
   })
 })
 
 describe('wake phrase in a live session', () => {
-  it('detects a wake phrase that Edge split across results, and sends only the command', async () => {
+  it('detects a wake phrase the browser split across results, and sends only the command', async () => {
     const { voice, commands } = session()
     voice.start()
-    current().say('hey intelli')
-    current().say('home turn on the fan')
+    current().say('hey')
+    current().say('nova turn on the fan')
     await flush()
     expect(commands).toEqual(['turn on the fan'])
   })
@@ -127,32 +119,41 @@ describe('wake phrase in a live session', () => {
   it('split wake phrase with nothing after it opens the command window', async () => {
     const { voice, states, commands } = session()
     voice.start()
-    current().say('hey intel')
-    current().say('home')
+    current().say('hey')
+    current().say('Nova.')
     expect(states.at(-1)).toBe('command')
     current().say('turn off the light')
     await flush()
-    expect(commands).toEqual(['turn off the light']) // "Hey IntelliHome" itself is never sent
+    expect(commands).toEqual(['turn off the light']) // "Hey Nova" itself is never sent
   })
 
   it('does not join results that are too far apart', () => {
     let clock = 0
     const { voice, states } = session({ now: () => clock })
     voice.start()
-    current().say('hey intelli')
+    current().say('hey')
     clock += 10_000
-    current().say('home')
+    current().say('nova')
     expect(states.at(-1)).toBe('wake')
   })
 
   it('a repeated wake phrase in the command window is not sent as a command', async () => {
     const { voice, commands } = session()
     voice.start()
-    current().say('Hey Intel home')
-    current().say('hey intel home')
+    current().say('Hey Nova')
+    current().say('hey nova')
     current().say('lock the front door')
     await flush()
     expect(commands).toEqual(['lock the front door'])
+  })
+
+  it('the old IntelliHome phrase is ignored while waiting for the wake phrase', async () => {
+    const { voice, states, commands } = session()
+    voice.start()
+    current().say('Hey IntelliHome, turn on the fan')
+    await flush()
+    expect(commands).toEqual([])
+    expect(states.at(-1)).toBe('wake')
   })
 })
 
@@ -172,7 +173,7 @@ describe('voice session', () => {
     current().say('turn on the fan') // no wake phrase: ignored
     expect(commands).toEqual([])
     const first = current()
-    first.say('Hey IntelliHome, turn on the living room fan')
+    first.say('Hey Nova, turn on the living room fan')
     await flush()
 
     expect(commands).toEqual(['turn on the living room fan'])
@@ -185,14 +186,14 @@ describe('voice session', () => {
   it('wake phrase alone opens a command window that times out', async () => {
     const { voice, states, commands } = session()
     voice.start()
-    current().say('Hey IntelliHome')
+    current().say('Hey Nova')
     expect(states.at(-1)).toBe('command')
 
     current().say('lock the front door')
     await flush()
     expect(commands).toEqual(['lock the front door'])
 
-    current().say('hey intellihome')
+    current().say('hey nova')
     vi.advanceTimersByTime(8000)
     expect(states.at(-1)).toBe('wake')
     current().say('turn off the light') // after the window, needs the wake phrase again
@@ -203,7 +204,7 @@ describe('voice session', () => {
   it('a pending door confirmation is answered without the wake phrase', async () => {
     const { voice, commands } = session({ reply: { speech: 'Are you sure?', expectsReply: true } })
     voice.start()
-    current().say('Hey IntelliHome, unlock the main door')
+    current().say('Hey Nova, unlock the main door')
     await flush()
 
     current().say('yes, unlock it')
@@ -215,10 +216,10 @@ describe('voice session', () => {
     const heard = []
     const { voice, commands } = session({ onHeard: (text) => heard.push(text) })
     voice.start()
-    current().say('Hey IntelliHome, turn', false)
+    current().say('Hey Nova, turn', false)
     await flush()
     expect(commands).toEqual([])
-    expect(heard).toEqual(['Hey IntelliHome, turn'])
+    expect(heard).toEqual(['Hey Nova, turn'])
   })
 
   it('microphone denial stops everything with a clear message', () => {
@@ -262,7 +263,7 @@ describe('voice session', () => {
       onCommand: () => new Promise((resolve) => (resolveCommand = resolve)),
     })
     voice.start()
-    current().say('Hey IntelliHome')
+    current().say('Hey Nova')
     current().say('turn on the fan')
     voice.stop()
 
@@ -316,7 +317,7 @@ describe('speech output', () => {
   })
 
   it('status line follows the real request', () => {
-    expect(voiceStatusLabel({ state: 'wake' })).toBe('Listening for “Hey IntelliHome”')
+    expect(voiceStatusLabel({ state: 'wake' })).toBe('Listening for “Hey Nova”')
     expect(voiceStatusLabel({ state: 'processing' }, 'executing')).toBe('Executing…')
     expect(voiceStatusLabel({ state: 'processing' }, 'success')).toBe('Done')
     expect(voiceStatusLabel({ state: 'error', message: 'Microphone access was denied.' })).toBe('Microphone access was denied.')

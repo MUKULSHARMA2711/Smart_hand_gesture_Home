@@ -107,7 +107,7 @@ export function spokenSummary(response, deviceNames = {}) {
 
 const VOICE_LABELS = {
   off: 'Voice is off',
-  wake: 'Listening for “Hey IntelliHome”',
+  wake: 'Listening for “Hey Nova”',
   command: 'Listening for your request…',
   processing: 'Processing…',
   speaking: 'Speaking…',

@@ -558,13 +558,14 @@ This is a rule-based check, not language understanding: a negation that comes *a
 the verb ("unlock the door… not!") is not detected. That is why unlocking also needs an
 explicit confirmation.
 
-### Voice: "Hey IntelliHome"
+### Voice: "Hey Nova"
 
 On the AI assistant page, **Enable voice** turns on hands-free control in browsers with
 the Web Speech API (Chrome, Edge).
 
-1. Say "Hey IntelliHome, turn on the living room fan", or say "Hey IntelliHome" and then
-   the request within 8 s.
+1. Say "Hey Nova, turn on the living room fan", or say "Hey Nova" and then the request
+   within 8 s. Case, punctuation and spacing do not matter, and a wake phrase the browser
+   splits across two results ("hey" | "nova, …") is still recognised.
 2. The recognised text goes to the same `POST /ai/command` pipeline as typed requests, so
    it gets the same validation, door policy and CommandService path. There is no separate
    execution path.
