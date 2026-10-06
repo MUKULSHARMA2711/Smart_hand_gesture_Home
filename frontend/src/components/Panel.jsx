@@ -1,17 +1,15 @@
 export function SectionHeading({ id, children }) {
   return (
-    <h2 id={id} className="text-sm font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
+    <h2 id={id} className="text-[11px] font-semibold tracking-[0.2em] text-slate-400 uppercase">
       {children}
     </h2>
   )
 }
 
-/** Titled card used across the gesture page. */
+/** Titled glass card used across the command center. */
 export function Panel({ title, action, children, className = '' }) {
   return (
-    <section
-      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}
-    >
+    <section className={`glass-panel ${className}`}>
       {(title || action) && (
         <header className="mb-4 flex items-center justify-between gap-3">
           {title && <SectionHeading>{title}</SectionHeading>}

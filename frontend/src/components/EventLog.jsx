@@ -23,7 +23,7 @@ export function EventLog({ events, deviceNames }) {
       <h2 id="events-heading" className="mb-3 text-sm font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
         Recent events
       </h2>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="glass-panel overflow-x-auto p-0">
         {events.length === 0 ? (
           <p className="p-5 text-sm text-slate-500 dark:text-slate-400">No device actions yet. Use a control above.</p>
         ) : (

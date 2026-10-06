@@ -15,11 +15,14 @@ business logic or the (future) AI layer.
 * **Day 3:** an **AI home agent** for natural-language control. It plans structured
   actions over explicit device capabilities, and the backend validates them before they
   run through `CommandService`. See [AI home agent](#ai-home-agent-day-3).
+* **Day 4:** a **3D command center**: a live digital twin of the house (React Three
+  Fiber) with an AI core, command beams, energy analytics and an activity console, all
+  driven by real backend state. See [3D command center](#3d-command-center-day-4).
 
 ```
 smart-ai-home/
 ├── backend/      FastAPI service: devices, home state, commands, events, gestures, AI agent
-├── frontend/     React + Vite + Tailwind: dashboard, gesture control (MediaPipe), AI assistant
+├── frontend/     React + Vite + Tailwind + R3F: 3D command center, gestures (MediaPipe), AI assistant
 ├── ai/           Reserved for offline AI work (evals, prompt experiments); the agent lives in backend/app/ai
 ├── vision/       Server-side / offline vision work, e.g. training a gesture model (later)
 ├── ml/           Models: occupancy prediction, energy forecasting (later)
@@ -657,6 +660,117 @@ The **AI assistant** tab (`#/assistant`) shows:
 
 The dashboard's event log labels every event's source: Dashboard, Gesture, AI agent or
 Automation.
+
+---
+
+## 3D command center (Day 4)
+
+Day 4 changes only the frontend. The backend, `CommandService`, the AI agent and the
+gesture stabilizer are untouched.
+
+| Page | What it shows |
+|---|---|
+| **Home** (`#/`) | Live 3D digital twin, AI core, sensor readout, "Ask IntelliHome" bar, device inspector, home status checks, live event stream, device controls |
+| **Gesture** (`#/gestures`) | The Day 2 camera/MediaPipe UI, plus a 3D preview with the selected target and gesture → device beams |
+| **AI assistant** (`#/assistant`) | Chat, a 3D view with command beams, and the request lifecycle (request → understanding → context → plan → validation → execution → result) |
+| **Energy** (`#/energy`) | Current, peak and average power, a power-over-time chart, per-device bars, and the anomaly status |
+| **Activity** (`#/activity`) | One stream of device events, gesture events and AI interactions, with filters, plus the device event table |
+
+### Real state drives the scene
+
+```
+FastAPI ──poll every 5 s / refresh after each command──► HomeDataProvider (useHomeDashboard)
+                                                              │ devices, sensors, energy, events
+                                                              ▼
+                       AssistantProvider ─► useDisplayDevices() ─► SmartHomeScene (props only)
+                                                                    Light3D · Fan3D · AC3D · Door3D
+```
+
+The scene keeps **no device state of its own**. Each device component receives the
+backend snapshot as a prop and derives its visuals through pure functions in
+`components/3d/visualState.js`, which are unit-tested:
+
+| Backend state | Visual |
+|---|---|
+| light `is_on`, `brightness` 0–100 | bulb glow, point-light intensity and floor glow; `level = 0.12 + 0.88 × brightness/100`, 0 when off |
+| fan `is_on`, `speed` 0–100 | blade angular velocity 2–24 rad/s (multiplier `speed/100`), smooth spin-up and spin-down; stopped when off |
+| AC `is_on`, `target_temperature_c` | cool-air particles only while on (colder set points blow harder and bluer); the real set point is shown on the unit |
+| door `is_locked` | closed with a green indicator when locked; ajar with amber when unlocked |
+
+Animations only *smooth toward* the backend value. They never decide it.
+
+### Commands from the 3D UI
+
+```
+click device in 3D ──► DeviceInspector (capabilities + controls)
+                              │ sendCommand(id, action, value)    (existing API client)
+                              ▼
+            POST /api/v1/devices/{id}/command ─► CommandService ─► device
+                              │ success response
+                              ▼
+            refresh() ─► new backend state ─► scene re-renders, plus a confirmation pulse
+```
+
+Nothing changes visually until the backend confirms. Effects (`CommandFxContext`) are
+only emitted from real API responses:
+
+* AI action results: executed → beam, rejected → red fizzle
+* gesture results: beam from the gesture input
+* dashboard commands: device pulse
+
+### AI core and command beams
+
+`<AIOrb state=…/>` supports `idle`, `listening`, `thinking`, `planning`, `executing`,
+`success` and `error`. The state comes from `state/aiLifecycle.js`, a tested reducer
+driven by real events:
+
+* **idle**: nothing in progress.
+* **listening**: the assistant input is focused, or the gesture camera is running.
+* **thinking**: the HTTP request is in flight. This is the only real wait.
+* **planning** (~0.7 s): the backend response has arrived and its plan is shown.
+* **executing**: one beam per device-targeting result, about 0.55 s apart, in plan order.
+* **success** or **error**: derived from the real results, for example error if
+  everything was rejected or failed.
+
+While beams are in flight, each targeted device is drawn with the backend's own
+`previous_state` for that action. It switches to `new_state` when its beam lands, so in
+"turn on the light and turn off the fan" the light visibly changes first, then the fan.
+Both states come from the response. Live polled state takes over once every beam has
+landed.
+
+The door is only touched if the backend plan contains a valid explicit `LOCK_DOOR` or
+`UNLOCK_DOOR`. "I'm leaving home" turns off appliances and leaves the door alone,
+because that is what the backend returns.
+
+### Honest data
+
+* **Home status** shows verifiable checks only: devices online, door security, sensor
+  freshness, plus power information. There is no invented "intelligence score".
+  Anomaly detection is labelled "Not available yet".
+* **Energy history** is sampled by the browser from the same 5 s polls; the backend
+  stores no history. The page says so, and the chart starts when the page is opened.
+* **Home context** in the lifecycle view is built server-side and is not returned by the
+  API. The UI labels what it shows as the dashboard's snapshot at send time.
+
+### Performance and accessibility
+
+* three.js, R3F and drei load lazily, only when a page shows the house: a ~262 kB gzip
+  chunk. MediaPipe still loads only on the gesture page.
+* The geometry is procedural, with no model or texture downloads. Glow uses additive
+  sprites from a code-generated texture instead of a postprocessing pass. Instanced
+  meshes draw the particles.
+* Particles and orb effects are only mounted in the states that use them. The render
+  loop pauses when the canvas scrolls out of view. DPR is capped at 1.75.
+* `prefers-reduced-motion` disables spinning, particles and beams and renders on demand.
+  Device state is still shown through labels and lighting.
+* Without WebGL (or if the scene fails), a clickable 2D floor plan with the same live
+  state replaces the 3D view.
+
+### Tests
+
+`npm test` covers the backend → visual mappings, the AI lifecycle reducer, home status
+checks, energy history, the activity feed merge and the pipeline stages. The Day 2
+classifier and stabilizer tests are unchanged.
 
 ---
 

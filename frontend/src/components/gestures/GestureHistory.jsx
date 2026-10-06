@@ -23,7 +23,7 @@ export function GestureHistory({ events, deviceNames }) {
       <div className="mb-3">
         <SectionHeading id="gesture-history-heading">Recent gesture events</SectionHeading>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="glass-panel overflow-x-auto p-0">
         {events.length === 0 ? (
           <p className="p-5 text-sm text-slate-500 dark:text-slate-400">No gestures yet.</p>
         ) : (

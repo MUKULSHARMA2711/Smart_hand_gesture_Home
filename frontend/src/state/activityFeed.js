@@ -1,0 +1,63 @@
+/**
+ * Merges the three real activity sources (device events, gesture events, AI interactions)
+ * into one time-ordered stream for the observability console. Nothing is invented.
+ */
+
+export const SOURCE_TAGS = {
+  frontend: 'DASHBOARD',
+  gesture: 'GESTURE',
+  ai_agent: 'AI AGENT',
+  automation: 'AUTOMATION',
+  mqtt: 'MQTT',
+}
+
+const ACTION_RESULTS = {
+  turn_on: () => 'ON',
+  turn_off: () => 'OFF',
+  lock: () => 'LOCKED',
+  unlock: () => 'UNLOCKED',
+  set_brightness: (v) => `BRIGHTNESS ${v}%`,
+  set_speed: (v) => `SPEED ${v}%`,
+  set_temperature: (v) => `TARGET ${v} °C`,
+}
+
+export function deviceEventLine(event, deviceNames = {}) {
+  const name = (deviceNames[event.device_id] ?? event.device_id).toUpperCase()
+  const result = ACTION_RESULTS[event.action]?.(event.value) ?? event.action.toUpperCase()
+  return `${name} → ${result}`
+}
+
+export function buildActivityFeed({ deviceEvents = [], gestureEvents = [], aiInteractions = [], deviceNames = {} }) {
+  const entries = [
+    ...deviceEvents.map((event) => ({
+      id: `device:${event.event_id}`,
+      timestamp: event.timestamp,
+      kind: 'device',
+      source: event.source,
+      tag: SOURCE_TAGS[event.source] ?? event.source.toUpperCase(),
+      text: deviceEventLine(event, deviceNames),
+      tone: 'ok',
+    })),
+    ...gestureEvents.map((event) => ({
+      id: `gesture:${event.event_id}`,
+      timestamp: event.timestamp,
+      kind: 'gesture',
+      source: 'gesture',
+      tag: 'GESTURE',
+      text: `${event.gesture} ${Math.round(event.confidence * 100)}% → ${event.intent}`,
+      detail: event.success ? event.action ?? event.outcome : event.detail ?? event.outcome,
+      tone: event.success ? 'ok' : 'error',
+    })),
+    ...aiInteractions.map((interaction) => ({
+      id: `ai:${interaction.interaction_id}`,
+      timestamp: interaction.timestamp,
+      kind: 'ai',
+      source: 'ai_agent',
+      tag: 'AI AGENT',
+      text: `“${interaction.request}”`,
+      detail: interaction.outcome,
+      tone: interaction.any_rejected || !interaction.plan_valid ? 'warning' : 'ok',
+    })),
+  ]
+  return entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+}

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChatTurn } from '../components/assistant/ChatTurn'
+import { LifecyclePipeline } from '../components/assistant/LifecyclePipeline'
+import { HouseView } from '../components/house/HouseView'
+import { OrbStatus } from '../components/OrbStatus'
 import { Panel } from '../components/Panel'
-import { useAssistant } from '../hooks/useAssistant'
+import { useAssistantContext } from '../state/AssistantContext'
+import { useHomeData } from '../state/HomeDataContext'
 import { describeStateChange, formatTime } from '../lib/format'
 
 const SUGGESTIONS = [
@@ -14,7 +18,7 @@ const SUGGESTIONS = [
   'How much energy are we using?',
 ]
 
-function Composer({ sending, onSend }) {
+function Composer({ sending, onSend, onTyping }) {
   const [draft, setDraft] = useState('')
   const submit = (event) => {
     event.preventDefault()
@@ -31,6 +35,8 @@ function Composer({ sending, onSend }) {
         id="assistant-input"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
+        onFocus={() => onTyping?.(true)}
+        onBlur={() => onTyping?.(false)}
         maxLength={1000}
         placeholder="Ask about your home or tell it what to do…"
         autoComplete="off"
@@ -101,20 +107,21 @@ function RecentAIActions({ events, deviceNames }) {
   )
 }
 
-export function AssistantPage({ home, events, refreshHome }) {
+export function AssistantPage() {
+  const { home, events, deviceNames } = useHomeData()
   const devicesById = Object.fromEntries(home.devices.map((device) => [device.id, device]))
-  const deviceNames = Object.fromEntries(home.devices.map((device) => [device.id, device.name]))
-  const assistant = useAssistant({ onDevicesChanged: refreshHome })
+  const assistant = useAssistantContext()
   const scrollRef = useRef(null)
+  const latestTurn = assistant.turns.at(-1)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [assistant.turns])
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Panel title="Assistant" className="flex flex-col lg:col-span-2">
-        <div ref={scrollRef} className="-mx-1 max-h-[60vh] min-h-64 overflow-y-auto px-1">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <Panel title="Assistant" className="flex flex-col">
+        <div ref={scrollRef} className="-mx-1 max-h-[62vh] min-h-64 overflow-y-auto px-1">
           {assistant.turns.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
               Ask a question or tell IntelliHome what to do.
@@ -142,13 +149,27 @@ export function AssistantPage({ home, events, refreshHome }) {
               </button>
             ))}
           </div>
-          <Composer sending={assistant.sending} onSend={assistant.send} />
+          <Composer sending={assistant.sending} onSend={assistant.send} onTyping={assistant.setTyping} />
         </div>
       </Panel>
 
       <div className="space-y-6">
-        <ProviderPanel status={assistant.status} statusError={assistant.statusError} />
-        <RecentAIActions events={events} deviceNames={deviceNames} />
+        <section className="scene-frame h-100" aria-label="3D command visualization">
+          <HouseView compact />
+          <OrbStatus state={assistant.orbState} className="absolute top-4 right-4" />
+        </section>
+        <Panel title="Request lifecycle">
+          <LifecyclePipeline
+            turn={latestTurn}
+            lifecycle={assistant.lifecycle}
+            contextAtSend={assistant.contextAtSend}
+            deviceNames={deviceNames}
+          />
+        </Panel>
+        <div className="grid gap-6 md:grid-cols-2">
+          <ProviderPanel status={assistant.status} statusError={assistant.statusError} />
+          <RecentAIActions events={events} deviceNames={deviceNames} />
+        </div>
       </div>
     </div>
   )

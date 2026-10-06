@@ -33,7 +33,7 @@ export function DeviceCard({ device, busy, onCommand }) {
   return (
     <article
       aria-busy={busy}
-      className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      className="glass-panel flex flex-col gap-5 transition duration-200 hover:-translate-y-0.5 hover:border-cyan-400/25"
     >
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">

@@ -41,9 +41,10 @@ export function useHomeDashboard() {
       setPendingDeviceId(deviceId)
       setCommandError(null)
       try {
-        await api.sendCommand(deviceId, action, value)
+        return await api.sendCommand(deviceId, action, value) // the backend's response on success
       } catch (error) {
         setCommandError(error.message)
+        return null
       } finally {
         await refresh()
         setPendingDeviceId(null)

@@ -1,19 +1,26 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { API_BASE_URL } from './api/client'
-import { useHomeDashboard } from './hooks/useHomeDashboard'
 import { formatTime } from './lib/format'
+import { ActivityPage } from './pages/ActivityPage'
 import { AssistantPage } from './pages/AssistantPage'
-import { DashboardPage } from './pages/DashboardPage'
+import { EnergyPage } from './pages/EnergyPage'
+import { HomePage } from './pages/HomePage'
+import { AssistantProvider } from './state/AssistantContext'
+import { CommandFxProvider } from './state/CommandFxContext'
+import { HomeDataProvider, useHomeData } from './state/HomeDataContext'
 
 const COMMAND_ERROR_TIMEOUT_MS = 6000
 
-// Loaded on demand so the dashboard never downloads MediaPipe.
+// Loaded on demand so other pages never download MediaPipe.
 const GesturePage = lazy(() => import('./pages/GesturePage').then((module) => ({ default: module.GesturePage })))
 
 const ROUTES = [
-  { id: 'dashboard', hash: '#/', label: 'Dashboard', subtitle: 'Virtual IoT dashboard · simulated devices' },
-  { id: 'gestures', hash: '#/gestures', label: 'Gesture control', subtitle: 'Hand gesture control · runs in your browser' },
-  { id: 'assistant', hash: '#/assistant', label: 'AI assistant', subtitle: 'Natural-language control · validated actions' },
+  { id: 'home', hash: '#/', label: 'Home', subtitle: 'Command center · live digital twin', Page: HomePage },
+  { id: 'gestures', hash: '#/gestures', label: 'Gesture', subtitle: 'Hand gesture control · runs in your browser', Page: GesturePage },
+  { id: 'assistant', hash: '#/assistant', label: 'AI assistant', subtitle: 'Natural-language control · validated actions', Page: AssistantPage },
+  { id: 'energy', hash: '#/energy', label: 'Energy', subtitle: 'Power draw · sampled live', Page: EnergyPage },
+  { id: 'activity', hash: '#/activity', label: 'Activity', subtitle: 'Device, gesture and AI activity', Page: ActivityPage },
 ]
 
 function useHashRoute() {
@@ -29,17 +36,17 @@ function useHashRoute() {
 
 function ConnectionIndicator({ connected, updatedAt }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-      <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} aria-hidden="true" />
-      <span>{connected ? 'Live' : 'Disconnected'}</span>
-      {updatedAt && <span className="hidden sm:inline">· updated {formatTime(updatedAt)}</span>}
+    <div className="flex items-center gap-2 text-xs text-slate-400">
+      <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500'}`} aria-hidden="true" />
+      <span className="font-semibold tracking-widest uppercase">{connected ? 'Live' : 'Offline'}</span>
+      {updatedAt && <span className="hidden tabular-nums sm:inline">· {formatTime(updatedAt)}</span>}
     </div>
   )
 }
 
 function Navigation({ current }) {
   return (
-    <nav aria-label="Main" className="mx-auto flex max-w-6xl gap-1 px-4">
+    <nav aria-label="Main" className="flex flex-wrap gap-1 rounded-full border border-white/5 bg-slate-900/60 p-1 backdrop-blur">
       {ROUTES.map((route) => {
         const active = route.id === current.id
         return (
@@ -47,13 +54,18 @@ function Navigation({ current }) {
             key={route.id}
             href={route.hash}
             aria-current={active ? 'page' : undefined}
-            className={`border-b-2 px-3 pt-1 pb-2.5 text-sm font-medium transition-colors ${
-              active
-                ? 'border-indigo-600 text-slate-900 dark:border-indigo-400 dark:text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            className={`relative rounded-full px-4 py-1.5 text-[11px] font-semibold tracking-[0.18em] uppercase transition-colors ${
+              active ? 'text-white' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {route.label}
+            {active && (
+              <motion.span
+                layoutId="nav-active"
+                className="absolute inset-0 rounded-full border border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_18px_-4px_rgba(34,211,238,0.6)]"
+                transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              />
+            )}
+            <span className="relative">{route.label}</span>
           </a>
         )
       })}
@@ -68,40 +80,40 @@ function CommandErrorToast({ message, onDismiss }) {
   }, [message, onDismiss])
 
   return (
-    <div
-      role="alert"
-      className="fixed inset-x-4 bottom-4 z-10 mx-auto flex max-w-lg items-start gap-3 rounded-xl border border-red-200 bg-white p-4 text-sm shadow-lg dark:border-red-900 dark:bg-slate-900"
-    >
-      <span className="font-semibold text-red-700 dark:text-red-400">Command failed</span>
-      <span className="flex-1 text-slate-700 dark:text-slate-300">{message}</span>
-      <button type="button" onClick={onDismiss} className="text-slate-500 hover:text-slate-900 dark:hover:text-white" aria-label="Dismiss">
+    <div role="alert" className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-lg items-start gap-3 rounded-xl border border-red-900 bg-slate-950/95 p-4 text-sm shadow-lg backdrop-blur">
+      <span className="font-semibold text-red-400">Command failed</span>
+      <span className="flex-1 text-slate-300">{message}</span>
+      <button type="button" onClick={onDismiss} className="text-slate-400 hover:text-white" aria-label="Dismiss">
         ✕
       </button>
     </div>
   )
 }
 
-export default function App() {
+function Shell() {
   const route = useHashRoute()
-  const dashboard = useHomeDashboard()
-  const { home, connectionError, commandError, clearCommandError } = dashboard
+  const { home, connectionError, commandError, clearCommandError } = useHomeData()
+  const { Page } = route
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
-          <div>
-            <h1 className="text-lg font-semibold">IntelliHome</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{route.subtitle}</p>
+      <header className="sticky top-0 z-20 border-b border-white/5 bg-slate-950/70 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-6 py-3">
+          <div className="flex items-center gap-3">
+            <span className="brand-mark" aria-hidden="true" />
+            <div>
+              <h1 className="text-base font-semibold tracking-wide text-white">IntelliHome</h1>
+              <p className="text-[11px] text-slate-400">{route.subtitle}</p>
+            </div>
           </div>
-          <ConnectionIndicator connected={!connectionError && !!home} updatedAt={home?.timestamp} />
+          <Navigation current={route} />
+          <ConnectionIndicator connected={!connectionError && Boolean(home)} updatedAt={home?.timestamp} />
         </div>
-        <Navigation current={route} />
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-6">
+      <main className="mx-auto max-w-[1440px] px-6 py-6">
         {connectionError && (
-          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <div role="alert" className="mb-6 rounded-xl border border-red-900 bg-red-950/60 p-4 text-sm text-red-200">
             <p className="font-semibold">{connectionError}</p>
             <p className="mt-1">
               Start the backend with <code className="font-mono">uvicorn app.main:app --reload</code> in{' '}
@@ -112,25 +124,38 @@ export default function App() {
 
         {!home && !connectionError && <p className="text-slate-500">Loading home state…</p>}
 
-        {home && route.id === 'dashboard' && (
-          <DashboardPage
-            home={home}
-            events={dashboard.events}
-            pendingDeviceId={dashboard.pendingDeviceId}
-            sendCommand={dashboard.sendCommand}
-          />
-        )}
-        {home && route.id === 'assistant' && (
-          <AssistantPage home={home} events={dashboard.events} refreshHome={dashboard.refresh} />
-        )}
-        {home && route.id === 'gestures' && (
-          <Suspense fallback={<p className="text-slate-500">Loading gesture control…</p>}>
-            <GesturePage home={home} refreshHome={dashboard.refresh} />
-          </Suspense>
+        {home && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={route.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              <Suspense fallback={<p className="text-slate-500">Loading…</p>}>
+                <Page />
+              </Suspense>
+            </motion.div>
+          </AnimatePresence>
         )}
       </main>
 
       {commandError && <CommandErrorToast message={commandError} onDismiss={clearCommandError} />}
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+      <CommandFxProvider>
+        <HomeDataProvider>
+          <AssistantProvider>
+            <Shell />
+          </AssistantProvider>
+        </HomeDataProvider>
+      </CommandFxProvider>
+    </MotionConfig>
   )
 }

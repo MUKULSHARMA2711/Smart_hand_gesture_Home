@@ -1,9 +1,174 @@
 @import "tailwindcss";
 
+/* The command center is always dark: `dark:` utilities follow the .dark class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --accent: #38bdf8;
+  --accent-bright: #67e8f9;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  @apply bg-slate-950 text-slate-100 antialiased;
+  background-color: #030712;
+  background-image:
+    radial-gradient(1200px 600px at 75% -10%, rgba(56, 189, 248, 0.09), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(99, 102, 241, 0.07), transparent 60%),
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: auto, auto, 48px 48px, 48px 48px;
+  background-attachment: fixed;
+}
+
+/* --- Surfaces ------------------------------------------------------------------------- */
+
+.glass-panel {
+  @apply rounded-2xl border border-white/[0.07] bg-slate-900/55 p-5 backdrop-blur-md;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 20px 50px -24px rgba(0, 0, 0, 0.8);
+}
+
+.glass-tile {
+  @apply rounded-2xl border border-white/[0.07] bg-slate-900/50 p-4 backdrop-blur-md;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+.glass-tile:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.scene-frame {
+  @apply relative overflow-hidden rounded-3xl border border-cyan-400/10 bg-[#030712];
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.04),
+    0 30px 80px -30px rgba(14, 116, 144, 0.45),
+    inset 0 0 80px rgba(2, 6, 23, 0.9);
+}
+
+.console-panel {
+  @apply overflow-hidden rounded-2xl border border-cyan-400/10 bg-black/40 backdrop-blur-md;
+  box-shadow: inset 0 0 40px rgba(8, 47, 73, 0.25);
+}
+
+.console-live-dot {
+  @apply inline-block h-1.5 w-1.5 rounded-full bg-emerald-400;
+  box-shadow: 0 0 8px #34d399;
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+.brand-mark {
+  @apply inline-block h-8 w-8 rounded-xl;
+  background:
+    radial-gradient(circle at 50% 50%, #67e8f9 0 18%, transparent 19%),
+    radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.35), rgba(56, 189, 248, 0.05) 70%);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.35),
+    0 0 18px -2px rgba(56, 189, 248, 0.6);
+}
+
+.command-input {
+  @apply rounded-xl border border-cyan-400/20 bg-slate-950/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 backdrop-blur focus:border-cyan-300/60 focus:outline-none;
+}
+.command-button {
+  @apply rounded-xl border border-cyan-300/40 bg-cyan-400/15 px-5 py-2.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.chart-tooltip {
+  @apply absolute z-10 w-max rounded-lg border border-white/10 bg-slate-950/95 px-3 py-2 text-xs shadow-xl;
+}
+
+/* --- Labels rendered inside the 3D scene (drei <Html>) ----------------------------------- */
+
+.scene-tag {
+  @apply flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 text-[11px] whitespace-nowrap backdrop-blur;
+  transform: translateY(-4px);
+}
+.scene-tag--selected {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 16px -2px rgba(56, 189, 248, 0.6);
+}
+.scene-tag-name {
+  @apply font-medium text-slate-200;
+}
+.scene-tag-status {
+  @apply font-mono text-[10px] tracking-wider text-slate-400;
+}
+.scene-tag-dot {
+  @apply inline-block h-1.5 w-1.5 rounded-full;
+}
+.scene-tag-dot--on {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+.scene-tag-dot--off {
+  @apply bg-slate-600;
+}
+.scene-tag-dot--secure {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+.scene-tag-dot--warning {
+  background: var(--warning);
+  box-shadow: 0 0 6px var(--warning);
+}
+
+.scene-room-label {
+  @apply text-[10px] font-semibold tracking-[0.3em] whitespace-nowrap text-slate-500/80 uppercase select-none;
+}
+
+.scene-orb-label {
+  @apply rounded-full border border-sky-400/25 bg-slate-950/70 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.25em] whitespace-nowrap text-sky-300 uppercase backdrop-blur;
+}
+.scene-orb-label--success {
+  @apply border-emerald-400/40 text-emerald-300;
+}
+.scene-orb-label--error {
+  @apply border-red-400/40 text-red-300;
+}
+
+.scene-ac-display {
+  @apply font-mono text-[11px] text-slate-500;
+}
+.scene-ac-display--on {
+  color: var(--accent);
+  text-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
+}
+
+.scene-sensors {
+  @apply flex w-max gap-5 rounded-xl border border-cyan-400/15 bg-slate-950/70 px-4 py-2.5 whitespace-nowrap backdrop-blur;
+  box-shadow: 0 0 30px -10px rgba(56, 189, 248, 0.35);
+}
+.scene-sensors dt {
+  @apply text-[9px] font-semibold tracking-[0.2em] text-slate-500 uppercase;
+}
+.scene-sensors dd {
+  @apply font-mono text-xs text-cyan-100;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
