@@ -35,7 +35,8 @@ class CommandService:
                 value=result.command.argument,
                 previous_state=result.previous_state,
                 new_state=result.new_state,
-                source=source,
+                source=source,  # who acted (frontend, gesture, ai_agent); the transport goes in details
+                details=result.metadata,
             )
             self._events.append(event)
 

@@ -1,4 +1,4 @@
-import { deviceStatusLabel } from '../3d/visualState'
+import { connectivityLabel, deviceStatusLabel } from '../3d/visualState'
 
 /** Non-3D fallback: a top-down plan with the same real device state and selection. */
 const POSITIONS = {
@@ -38,7 +38,7 @@ export function FloorPlan2D({ devices, selectedId, onSelect, reason, alerts = ne
               key={device.id}
               role="button"
               tabIndex={0}
-              aria-label={`${device.name}: ${deviceStatusLabel(device)}`}
+              aria-label={`${device.name}: ${[deviceStatusLabel(device), connectivityLabel(device)].filter(Boolean).join(', ')}`}
               onClick={() => onSelect?.(device.id)}
               onKeyDown={(event) => event.key === 'Enter' && onSelect?.(device.id)}
               className="cursor-pointer"

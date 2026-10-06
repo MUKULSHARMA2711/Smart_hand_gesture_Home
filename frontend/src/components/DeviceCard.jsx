@@ -14,6 +14,7 @@ const CONTROLS_BY_TYPE = {
 const STATUS_STYLES = {
   online: { dot: 'bg-emerald-500', label: 'Online' },
   offline: { dot: 'bg-slate-400', label: 'Offline' },
+  unknown: { dot: 'bg-amber-400', label: 'Unknown' },
   error: { dot: 'bg-red-500', label: 'Error' },
 }
 
@@ -38,7 +39,10 @@ export function DeviceCard({ device, busy, onCommand }) {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-semibold">{device.name}</h3>
-          <p className="truncate text-sm text-slate-500 dark:text-slate-400">{humanize(device.room)}</p>
+          <p className="truncate text-sm text-slate-500 dark:text-slate-400">
+            {humanize(device.room)}
+            {device.driver === 'esp32_mqtt' && <span className="ml-1.5 font-mono text-[10px] text-cyan-300/80">ESP32</span>}
+          </p>
         </div>
         <StatusBadge status={device.status} />
       </header>

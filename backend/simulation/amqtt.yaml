@@ -1,0 +1,11 @@
+# Development-only MQTT broker (pure Python): `amqtt -c simulation/amqtt.yaml`.
+# Bound to localhost; never expose a development broker to a network.
+listeners:
+  default:
+    type: tcp
+    bind: 127.0.0.1:1883
+plugins:
+  amqtt.plugins.authentication.AnonymousAuthPlugin:
+    allow_anonymous: true
+  amqtt.plugins.sys.broker.BrokerSysPlugin:
+    sys_interval: 0

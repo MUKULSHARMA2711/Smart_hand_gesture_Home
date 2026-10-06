@@ -46,6 +46,7 @@ class VirtualDevice(Device, Generic[StateT]):
         if self._latency_s > 0:
             await asyncio.sleep(self._latency_s)  # mimic the network/firmware round trip
         self._state = self.apply(self._state, command)
+        return None
 
     @abstractmethod
     def apply(self, state: StateT, command: CommandModel) -> StateT:

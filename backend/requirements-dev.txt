@@ -1,3 +1,6 @@
 -r requirements.txt
 pytest>=8.0
 httpx>=0.27
+# Optional: a pure-Python MQTT broker for local development without Docker/Mosquitto.
+# Run: amqtt -c simulation/amqtt.yaml   (listens on 127.0.0.1:1883 only)
+amqtt>=0.11

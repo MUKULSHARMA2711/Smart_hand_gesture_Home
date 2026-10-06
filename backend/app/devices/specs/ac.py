@@ -25,5 +25,8 @@ class SetTemperature(CommandModel):
     action: Literal["set_temperature"] = "set_temperature"
     value: int = Field(ge=TEMPERATURE_MIN_C, le=TEMPERATURE_MAX_C, strict=True)
 
+    def effect(self) -> dict:
+        return {"target_temperature_c": self.value}
+
 
 AC_SPEC = DeviceSpec(DeviceType.AC, AcState, [TurnOn, TurnOff, SetTemperature])

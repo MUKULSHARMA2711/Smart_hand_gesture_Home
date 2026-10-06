@@ -16,6 +16,8 @@ from app.ai.errors import AIUnavailableError
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.domain.errors import (
     DeviceNotFoundError,
+    DeviceStateMismatchError,
+    DeviceTimeoutError,
     DeviceUnavailableError,
     DomainError,
     IntentNotApplicableError,
@@ -32,6 +34,8 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     UnsupportedCommandError: 400,
     InvalidCommandError: 422,
     DeviceUnavailableError: 503,
+    DeviceTimeoutError: 504,  # the device did not acknowledge in time
+    DeviceStateMismatchError: 502,  # the device acknowledged with a state that does not reflect the command
     IntentNotApplicableError: 400,
     GestureRejectedError: 422,
     GestureActionBlockedError: 403,

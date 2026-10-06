@@ -22,5 +22,8 @@ class SetBrightness(CommandModel):
     action: Literal["set_brightness"] = "set_brightness"
     value: int = Field(ge=BRIGHTNESS_MIN, le=BRIGHTNESS_MAX, strict=True)
 
+    def effect(self) -> dict:
+        return {"brightness": self.value}
+
 
 LIGHT_SPEC = DeviceSpec(DeviceType.LIGHT, LightState, [TurnOn, TurnOff, SetBrightness])

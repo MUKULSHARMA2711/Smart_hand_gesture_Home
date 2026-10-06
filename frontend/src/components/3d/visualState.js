@@ -94,6 +94,15 @@ export function deviceVisual(device) {
   }
 }
 
+/**
+ * Connectivity label for a device that is not reachable, or null when it is online.
+ * Hardware devices report it over MQTT; the state shown is then the last confirmed one.
+ */
+export function connectivityLabel(device) {
+  if (!device?.status || device.status === 'online') return null
+  return device.status === 'offline' ? 'OFFLINE' : device.status === 'unknown' ? 'UNKNOWN' : device.status.toUpperCase()
+}
+
 /** Short status shown on 3D labels, e.g. "ON · 70%", "OFF · 24 °C", "LOCKED". */
 export function deviceStatusLabel(device) {
   const state = device?.state ?? {}

@@ -37,12 +37,23 @@ class CommandModel(BaseModel):
         """The command's value, or ``None`` for commands that take none."""
         return getattr(self, "value", None)
 
+    def effect(self) -> dict[str, Any]:
+        """State fields this command must produce. A device acknowledgement is only accepted
+        as success if its reported state matches (see ESP32MQTTDevice)."""
+        raise NotImplementedError(self.action)
+
 
 class TurnOn(CommandModel):
     capability = Capability.TURN_ON
     action: Literal["turn_on"] = "turn_on"
 
+    def effect(self) -> dict[str, Any]:
+        return {"is_on": True}
+
 
 class TurnOff(CommandModel):
     capability = Capability.TURN_OFF
     action: Literal["turn_off"] = "turn_off"
+
+    def effect(self) -> dict[str, Any]:
+        return {"is_on": False}

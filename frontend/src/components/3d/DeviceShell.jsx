@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { Halo } from './glow'
 import { COLORS } from './palette'
 import { SceneHtml } from './SceneHtml'
-import { deviceStatusLabel } from './visualState'
+import { connectivityLabel, deviceStatusLabel } from './visualState'
 
 /** Re-render once when a value changes (needed when the canvas only renders on demand). */
 export function useInvalidateOn(...deps) {
@@ -55,6 +55,9 @@ function DeviceTag({ position, device, selected, alert, prediction }) {
         <span className={`scene-tag-dot ${TAG_TONES[tagTone(device)]}`} />
         <span className="scene-tag-name">{device.name}</span>
         <span className="scene-tag-status">{deviceStatusLabel(device)}</span>
+        {connectivityLabel(device) && (
+          <span className="scene-tag-badge scene-tag-badge--offline">{connectivityLabel(device)}</span>
+        )}
         {alert && <span className="scene-tag-badge scene-tag-badge--alert">⚠ Anomaly</span>}
         {!alert && prediction != null && (
           <span className="scene-tag-badge scene-tag-badge--prediction">AI {Math.round(prediction * 100)}%</span>

@@ -20,6 +20,10 @@ from app.events.store import EventStore, InMemoryEventStore
 from app.gestures.history import GestureHistory, InMemoryGestureHistory
 from app.gestures.service import GestureService
 from app.ml.service import MLService, train_models
+from app.mqtt import topics
+from app.mqtt.client import MQTTTransport, Will
+from app.mqtt.manager import MQTTManager
+from app.sensors.base import SensorProvider
 from app.sensors.simulated import SimulatedSensorProvider
 
 logger = logging.getLogger(__name__)
@@ -36,6 +40,7 @@ class Container:
     agent: HomeAgent
     agent_history: InMemoryAgentHistory
     ml_service: MLService | None
+    mqtt: MQTTManager | None = None  # None when MQTT is disabled (pure virtual mode)
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -71,11 +76,56 @@ def build_ml_service(settings: Settings, home_state: HomeState, event_store: Eve
     )
 
 
-def build_container(settings: Settings, *, ai_provider: AIProvider | None = None) -> Container:
-    latency_s = settings.virtual_device_latency_ms / 1000
-    registry = DeviceRegistry(build_device(config, virtual_latency_s=latency_s) for config in settings.devices)
-    home_state = HomeState(registry, SimulatedSensorProvider(seed=settings.sensor_seed))
+def build_mqtt_transport(settings: Settings) -> MQTTTransport:
+    from app.mqtt.client import PahoTransport
+
+    return PahoTransport(
+        host=settings.mqtt_host,
+        port=settings.mqtt_port,
+        client_id=settings.mqtt_client_id,
+        username=settings.mqtt_username,
+        password=settings.mqtt_password.get_secret_value() if settings.mqtt_password else None,
+        keepalive_s=settings.mqtt_keepalive_s,
+        will=Will(topics.backend_availability(), topics.OFFLINE),
+    )
+
+
+def build_container(
+    settings: Settings, *, ai_provider: AIProvider | None = None, mqtt_transport: MQTTTransport | None = None
+) -> Container:
     event_store = InMemoryEventStore(max_size=settings.event_log_max_size)
+
+    mqtt: MQTTManager | None = None
+    if settings.mqtt_enabled:
+        mqtt = MQTTManager(
+            mqtt_transport or build_mqtt_transport(settings),
+            event_store,
+            broker=f"{settings.mqtt_host}:{settings.mqtt_port}",
+            client_id=settings.mqtt_client_id,
+        )
+
+    latency_s = settings.virtual_device_latency_ms / 1000
+    registry = DeviceRegistry(
+        build_device(
+            config,
+            virtual_latency_s=latency_s,
+            mqtt=mqtt,
+            command_timeout_s=settings.mqtt_command_timeout_s,
+            measurement_max_age_s=settings.sensor_max_age_s,
+        )
+        for config in settings.devices
+    )
+    sensors: SensorProvider
+    if settings.sensor_source == "mqtt" and mqtt is not None:
+        from app.sensors.mqtt import MQTTSensorProvider
+
+        sensors = MQTTSensorProvider(max_age_s=settings.sensor_max_age_s)
+        mqtt.attach_sensors(sensors)
+    else:
+        sensors = SimulatedSensorProvider(seed=settings.sensor_seed)
+    home_state = HomeState(registry, sensors)
+    if mqtt is not None:
+        mqtt.attach_home(home_state)
     command_service = CommandService(home_state, event_store)
     resolver = IntentResolver()
 
@@ -110,4 +160,5 @@ def build_container(settings: Settings, *, ai_provider: AIProvider | None = None
         agent=agent,
         agent_history=agent_history,
         ml_service=ml_service,
+        mqtt=mqtt,
     )

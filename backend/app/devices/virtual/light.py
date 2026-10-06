@@ -1,15 +1,13 @@
 from typing import Any
 
 from app.devices.commands import CommandModel, TurnOff, TurnOn
+from app.devices.power import light_power
 from app.devices.specs.light import BRIGHTNESS_MAX, LIGHT_SPEC, LightState, SetBrightness
 from app.devices.virtual.base import VirtualDevice
 
 
 class VirtualLight(VirtualDevice[LightState]):
     """Dimmable smart LED bulb (~9 W at full brightness)."""
-
-    MAX_POWER_W = 9.0
-    STANDBY_POWER_W = 0.3
 
     def __init__(self, device_id: str, name: str, room: str, **kwargs: Any) -> None:
         super().__init__(device_id, name, room, LIGHT_SPEC, **kwargs)
@@ -27,6 +25,4 @@ class VirtualLight(VirtualDevice[LightState]):
 
     @property
     def power_w(self) -> float:
-        if not self.state.is_on:
-            return self.STANDBY_POWER_W
-        return round(self.STANDBY_POWER_W + self.MAX_POWER_W * self.state.brightness / BRIGHTNESS_MAX, 2)
+        return light_power(self.get_state())

@@ -1,0 +1,8 @@
+# Local MQTT broker for development: docker compose -f simulation/mosquitto/docker-compose.yml up
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "127.0.0.1:1883:1883"   # localhost only
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro

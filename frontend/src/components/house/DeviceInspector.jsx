@@ -35,7 +35,9 @@ export function DeviceInspector({ deviceId, onClose }) {
       }
     >
       <p className="-mt-2 mb-4 text-xs text-slate-400">
-        {humanize(device.room)} · <span className="text-emerald-400">{device.status}</span> · {formatPower(device.power_w)}
+        {humanize(device.room)} ·{' '}
+        <span className={device.status === 'online' ? 'text-emerald-400' : 'text-amber-300'}>{device.status}</span>
+        {device.driver === 'esp32_mqtt' && ' · ESP32'} · {formatPower(device.power_w)}
       </p>
       {Controls && (
         <Controls

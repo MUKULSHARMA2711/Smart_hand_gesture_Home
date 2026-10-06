@@ -24,6 +24,10 @@ business logic or the (future) AI layer.
 * **Day 6:** **hardening**: one error format everywhere, failure isolation between the AI,
   ML, sensors and device control, and a tested failure matrix. See
   [Reliability and Failure Handling](#reliability-and-failure-handling).
+* **Phase 7:** **hardware readiness**: an MQTT driver for ESP32 devices with command
+  acknowledgements, timeouts, availability (Last Will) and fresh-only sensor data, tested
+  end to end against a Fake ESP32. No physical hardware is required. See
+  [MQTT Hardware Architecture](#mqtt-hardware-architecture).
 
 ```
 smart-ai-home/
@@ -189,6 +193,7 @@ every command it re-fetches state and events immediately.
 | GET | `/api/v1/ai/history?limit=20` | Recent assistant interactions, newest first |
 | GET | `/api/v1/ml/status` · POST `/api/v1/ml/predict` | ML models and fan-usage prediction |
 | GET | `/api/v1/ml/anomalies` · POST `/api/v1/ml/anomalies/check` | Energy anomaly detection |
+| GET | `/api/v1/iot/status` | MQTT connection, device availability, sensor freshness |
 | GET | `/api/v1/health` | Liveness check |
 
 ### Devices and commands
@@ -306,56 +311,10 @@ audit trail.
 
 ## Path to ESP32 + MQTT
 
-Nothing in `domain/`, `api/` or the future `ai/` layer imports a virtual device. Moving
-to hardware takes four additive steps:
-
-1. **Add a driver.** Add `ESP32_MQTT = "esp32_mqtt"` to `DeviceDriver`, and write
-   `app/devices/mqtt/esp32_device.py`. It reuses the existing spec, so validation is
-   unchanged:
-
-   ```python
-   class ESP32MQTTDevice(Device):
-       def __init__(self, device_id, name, room, spec, mqtt, ack_timeout_s=3.0):
-           super().__init__(device_id, name, room, spec)
-           self._mqtt, self._state, self._online = mqtt, spec.state_model(), False
-           mqtt.subscribe(f"home/{device_id}/state", self._on_state_report)
-           mqtt.subscribe(f"home/{device_id}/availability", self._on_availability)
-
-       @property
-       def status(self):        # driven by the ESP32's LWT / availability topic
-           return DeviceStatus.ONLINE if self._online else DeviceStatus.OFFLINE
-
-       def get_state(self):     # last state the firmware reported (retained message)
-           return self._state.model_dump()
-
-       async def _perform(self, command):
-           await self._mqtt.publish(f"home/{self.id}/set", command.model_dump_json(), qos=1)
-           await self._wait_for_state_report(timeout=self._ack_timeout_s)
-   ```
-
-2. **Register it in the factory** (`app/devices/factory.py`), then switch one device's
-   config to `driver=DeviceDriver.ESP32_MQTT`. Virtual and real devices can run side by
-   side, which is useful for bringing up hardware one relay at a time.
-3. **Sensors.** Implement `MqttSensorProvider(SensorProvider)` to cache the latest
-   DHT22, PIR and LDR readings from `home/sensors/#`, and swap it in
-   `app/container.py`.
-4. **Physical changes.** When someone presses a wall switch, the ESP32 publishes a new
-   state. The MQTT bridge records it as a `DeviceEvent` with `source=mqtt`. That source
-   value already exists.
-
-Proposed topic contract (JSON payloads use the same field names as the API):
-
-| Topic | Direction | Payload |
-|---|---|---|
-| `home/{device_id}/set` | backend → ESP32 | `{"action": "set_brightness", "value": 70}` |
-| `home/{device_id}/state` (retained) | ESP32 → backend | `{"is_on": true, "brightness": 70, "power_w": 6.6}` |
-| `home/{device_id}/availability` (LWT) | ESP32 → backend | `online` / `offline` |
-| `home/sensors/{room}` | ESP32 → backend | `{"temperature_c": 26.1, "humidity_pct": 58, ...}` |
-
-Gesture control already calls, and the AI agent and automations will call,
-`CommandService.execute(device_id, command, source=...)`, the same path the dashboard
-uses today. They are therefore validated and logged the same way, whether the device is
-virtual or real.
+Implemented in Phase 7: see [MQTT Hardware Architecture](#mqtt-hardware-architecture).
+Gesture control, the AI agent and the dashboard all call
+`CommandService.execute(device_id, command, source=...)`, so they are validated and logged
+the same way whether a device is virtual or an ESP32.
 
 ---
 
@@ -951,7 +910,281 @@ Regression tests: `backend/tests/test_reliability.py` and the frontend's
 
 ---
 
+## MQTT Hardware Architecture
+
+**Physical hardware is not required for this phase. Fake ESP32 provides a software
+simulation of the future firmware.** It speaks exactly the MQTT contract below, so the
+backend already runs the real hardware protocol end to end.
+
+```
+                 USER
+                   │
+          ┌────────┴────────┬────────────────────┐
+          ▼                 ▼                    ▼
+      MediaPipe          AI agent            dashboard
+          │                 │                    │
+          └────────┬────────┴────────────────────┘
+                   ▼
+             CommandService          (validation, per-device ordering, events)
+                   │
+            Device interface          same spec, capabilities, state models
+          ┌────────┴─────────┐
+          ▼                  ▼
+    VirtualDevice      ESP32MQTTDevice     ← chosen per device in config
+                             │
+                    MQTTManager (one shared connection, app/mqtt)
+                             │
+                        MQTT broker
+                             │
+              Fake ESP32 today · real ESP32 later
+                             │  state acknowledgement
+                             ▼
+                         HomeState ──► 3D twin · AI context · ML
+```
+
+Nothing above the Device interface knows how a device is connected. The AI agent and
+gesture control never publish MQTT; they call `CommandService` exactly as before, and the
+factory decides per device whether that reaches a `VirtualDevice` or an `ESP32MQTTDevice`.
+All MQTT code lives in `backend/app/mqtt/` (`topics.py`, `messages.py`, `client.py`,
+`manager.py`), plus the device driver in `backend/app/devices/esp32.py` and the sensor
+provider in `backend/app/sensors/mqtt.py`.
+
+### Topic contract
+
+All topics are built in `app/mqtt/topics.py` and nowhere else.
+
+| Topic | Direction | Payload | Retained |
+|---|---|---|---|
+| `home/{device_id}/set` | backend → device | command (JSON) | no |
+| `home/{device_id}/state` | device → backend | confirmed state / acknowledgement (JSON) | yes |
+| `home/{device_id}/availability` | device → backend | `online` / `offline` (also the device's Last Will) | yes |
+| `home/sensors/{temperature,humidity,occupancy,ambient_light}` | sensor board → backend | reading (JSON) | no |
+| `home/sensors/availability` | sensor board → backend | `online` / `offline` (Last Will) | yes |
+| `home/energy/{device_id}` | device → backend | measured power (JSON) | no |
+| `home/backend/availability` | backend | `online` / `offline` (the backend's Last Will) | yes |
+
+### Command message
+
+Published with QoS 1, not retained, on `home/{device_id}/set`:
+
+```json
+{
+  "command_id": "6f1c3a52-0d5e-4b2f-9b8a-1f0e2d3c4b5a",
+  "device_id": "fan_living_room",
+  "action": "set_speed",
+  "parameters": {"value": 70},
+  "issued_at": "2026-10-06T12:00:00Z",
+  "expires_at": "2026-10-06T12:00:03Z"
+}
+```
+
+`command_id` is a fresh UUID for every command. Firmware must drop a command whose
+`expires_at` has passed: by then the backend has already reported it as timed out, and a
+late execution (for example after a reconnect) must never surprise the user. The backend
+also connects with a clean session, so the broker never queues commands for later.
+
+### State acknowledgement
+
+The device publishes its resulting state, retained, on `home/{device_id}/state`:
+
+```json
+{
+  "device_id": "fan_living_room",
+  "command_id": "6f1c3a52-0d5e-4b2f-9b8a-1f0e2d3c4b5a",
+  "timestamp": "2026-10-06T12:00:00.012Z",
+  "state": {"is_on": true, "speed": 70}
+}
+```
+
+**Publishing a command is not success.** A command succeeds only when the backend
+receives an acknowledgement on the device's topic where:
+
+* `device_id` and `command_id` match;
+* `state` passes the device spec (types and ranges, strictly);
+* the state reflects the command (`set_speed 70` → `speed == 70`).
+
+Only then is the state committed as confirmed and the event recorded. Everything else is
+ignored and logged, and the command keeps waiting until it times out:
+
+| Received | Result |
+|---|---|
+| matching ack, matching state | success: confirmed state + event (`source` = who acted, `details.transport = "mqtt"`, `command_id`, `ack_latency_ms`) |
+| wrong / unknown `command_id`, another device, malformed JSON, impossible state | ignored; the command still times out |
+| matching ack, valid but different state | `502 device_state_mismatch`; the reported state is shown (it is the device's truth) as a `state_report` event |
+| the same ack again | ignored (one event only) |
+| ack after the timeout | recorded as a `state_report` (`late_acknowledgement`), since the device did act |
+| `command_id: null` | a report the device made itself (boot, wall switch): `state_report` event, `source=mqtt` |
+
+### Availability
+
+Each device connects with a Last Will of `offline` on its availability topic, and publishes
+`online` (retained) after connecting. The backend shows three states:
+
+* **ONLINE**: the device said so, or any message from it arrived.
+* **OFFLINE**: `offline` was published, or the broker published the Last Will.
+  * Commands fail at once with `503 device_unavailable` ("Living Room Fan is offline.").
+  * Nothing is published.
+  * The last confirmed state stays on screen, including 3D, with an OFFLINE badge.
+* **UNKNOWN**: nothing reported yet, the backend lost the broker, or the device stopped
+  answering (a timeout). A command may still be attempted; the timeout bounds it.
+
+If a device goes offline mid-command, that command fails immediately; so does a lost
+broker connection. When the broker returns, the backend reconnects by itself, resubscribes,
+and gets every device's retained availability and state back.
+
+### Timeouts
+
+The limit is `SMARTHOME_MQTT_COMMAND_TIMEOUT_S` (default 3 s, capped at 30 s). Without a
+matching acknowledgement in time:
+
+* The command fails with `504 device_timeout` ("Living Room Fan did not confirm the command
+  within 3 s. Its last confirmed state is unchanged.").
+* The pending command is cleared and no event is recorded.
+* The 3D view does not move, and the device shows UNKNOWN until it is heard from again.
+
+CommandService still serialises commands per device: commands to one device are sent one
+at a time, in order, and different devices run in parallel.
+
+### Sensor messages
+
+```json
+{"sensor_id": "dht22_1", "timestamp": "2026-10-06T12:00:00Z", "value": 29.4}
+```
+
+One message per reading on `home/sensors/{kind}`. For occupancy, `value` is the occupant
+count; a plain PIR publishes 0 or 1. Readings are validated with the same bounds as Day 6:
+
+* temperature −40 to 85 °C, humidity 0–100 %, light 0–200 000 lux;
+* whole occupant counts and finite numbers;
+* timezone-aware timestamps that are not in the future.
+
+A rejected reading marks that sensor faulty until a valid one arrives; its old value is not
+reused.
+
+**Freshness.** Each reading keeps its value, timestamp and sensor id. A reading older than
+`SMARTHOME_SENSOR_MAX_AGE_S` (default 30 s) is stale. If any sensor is stale, missing or
+rejected, or the sensor board is offline:
+
+* `environment` is `null`, with a `sensor_error` naming the problem;
+* the UI shows "Sensors unavailable";
+* ML marks its prediction `reliable: false`;
+* the AI says readings are unavailable.
+
+Values are never invented. Firmware should publish every sensor at least every
+`max_age / 2` seconds.
+
+Energy readings on `home/energy/{device_id}` (`{"timestamp": "...", "power_w": 41.2}`)
+replace the estimated draw while fresh, but only if measured after the device's last
+confirmed state change. That way a reading from before a switch-on can't trigger a false
+energy anomaly.
+
+### Fake ESP32
+
+`backend/simulation/mqtt_esp32.py` runs one simulated board per device, each with its own
+MQTT connection and Last Will, like real hardware. Each board:
+
+* publishes its availability and its retained state;
+* validates every command (shape, device id, expiry, action, parameters);
+* drives the same physics as the virtual device, then acknowledges.
+
+A sensor board publishes DHT22, PIR and LDR readings every 5 s with the same daily cycle as
+the simulated sensors, and each device board publishes its power readings.
+
+Failure scenarios (`simulation/scenarios.py`), switchable at runtime:
+
+| Scenario | Behaviour |
+|---|---|
+| `normal` | immediate acknowledgement |
+| `delay` | acknowledgement after `--delay` seconds |
+| `no_ack` | no response |
+| `offline` | publishes `offline`, ignores commands |
+| `wrong_command_id` | executes, acknowledges with another id |
+| `wrong_state` | acknowledges with an impossible state |
+| `malformed_ack` | acknowledges with invalid JSON |
+| `duplicate_ack` | acknowledges three times |
+| `reconnect` | goes offline, comes back after `--reconnect-after` seconds |
+| sensors: `normal`, `stale`, `invalid`, `offline` | readings stop / turn implausible / board offline |
+
+```bash
+python -m simulation.scenarios fan_living_room no_ack
+python -m simulation.scenarios fan_living_room delay --delay 2
+python -m simulation.scenarios sensors stale
+python -m simulation.scenarios fan_living_room normal
+```
+
+### Local MQTT setup (four terminals)
+
+Run these from `backend/` with the virtual environment active. Mosquitto via Docker is
+recommended; the pure-Python `amqtt` broker (in `requirements-dev.txt`) works without
+Docker. Both listen on `127.0.0.1` only.
+
+```bash
+# 1. Broker (either one)
+docker compose -f simulation/mosquitto/docker-compose.yml up
+amqtt -c simulation/amqtt.yaml
+
+# 2. Fake ESP32: fan and light boards + sensor board
+python -m simulation.mqtt_esp32 --devices fan_living_room,light_living_room
+
+# 3. Backend in hardware mode (PowerShell: $env:SMARTHOME_MQTT_ENABLED = "true", ...)
+export SMARTHOME_MQTT_ENABLED=true
+export SMARTHOME_MQTT_DEVICES='["fan_living_room","light_living_room"]'
+export SMARTHOME_SENSOR_SOURCE=mqtt
+uvicorn app.main:app --reload
+
+# 4. Frontend
+cd ../frontend && npm run dev
+```
+
+**Mixed and degraded modes:**
+
+* Devices not listed in `SMARTHOME_MQTT_DEVICES` stay virtual, so virtual and hardware
+  devices run side by side.
+* With `SMARTHOME_MQTT_ENABLED=false` (the default), nothing about MQTT is loaded and no
+  broker is needed.
+* If the broker is down, the backend still starts. Virtual devices, gestures, AI and the
+  dashboard keep working, and ESP32 devices show UNKNOWN.
+
+`GET /api/v1/iot/status` reports the live connection, per-device availability and
+per-sensor freshness.
+
+Real-broker tests: `SMARTHOME_TEST_MQTT_HOST=127.0.0.1 pytest tests/test_mqtt_broker.py`.
+They publish on the real topics, so use a broker that no running system is using.
+
+### Moving to a real ESP32
+
+Nothing in the backend changes. The firmware has to implement the contract above:
+
+1. **Firmware** (Arduino / ESP-IDF with PubSubClient or esp-mqtt; ArduinoJson for parsing):
+   * connect Wi-Fi and sync the clock over NTP, because timestamps must be real;
+   * connect to the broker with **clean session** and the Last Will
+     `home/{id}/availability = offline` (QoS 1, retained);
+   * publish `online` (retained) and the current state (retained, `command_id: null`);
+   * subscribe to `home/{id}/set`. For each command: check `device_id`, drop it if
+     `expires_at` has passed, validate action and parameters, drive the relay or PWM, then
+     publish the resulting state with the same `command_id` (retained);
+   * publish a state report (`command_id: null`) whenever the state changes physically;
+   * sensor board: publish each reading on `home/sensors/{kind}` at least every 15 s;
+   * optional power meter: publish `home/energy/{id}`.
+2. **Broker:** run Mosquitto on the home network (a Raspberry Pi or the backend host).
+   * Use `allow_anonymous false` with a password file, and TLS if traffic leaves one machine.
+   * Keep it on the LAN. Never expose an MQTT broker to the internet.
+3. **Backend configuration only:**
+   * set `SMARTHOME_MQTT_HOST`, `PORT`, `USERNAME` and `PASSWORD` in `backend/.env`, which
+     is git-ignored;
+   * list the devices in `SMARTHOME_MQTT_DEVICES`;
+   * set `SMARTHOME_SENSOR_SOURCE=mqtt`;
+   * stop the Fake ESP32 for those devices.
+4. **Verify** with `GET /api/v1/iot/status`: connected, devices online, sensors `ok`. Then
+   run the same commands as with the Fake ESP32. A partly finished board can be tested
+   alongside the Fake ESP32 for the other devices.
+
+Credentials are read from the environment, held as a secret value, and never logged.
+
+---
+
 ## Out of scope so far
 
 Voice control, multi-agent architecture, facial recognition, vector databases/RAG,
-authentication, PostgreSQL, and real MQTT/ESP32 hardware communication.
+authentication, PostgreSQL, and physical ESP32 hardware (the MQTT protocol is implemented
+and tested against the Fake ESP32; the firmware itself is not part of this repository).

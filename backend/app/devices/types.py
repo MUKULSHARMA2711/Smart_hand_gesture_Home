@@ -13,6 +13,7 @@ class DeviceType(StrEnum):
 class DeviceStatus(StrEnum):
     ONLINE = "online"
     OFFLINE = "offline"
+    UNKNOWN = "unknown"  # no availability report yet, broker unreachable, or not responding
     ERROR = "error"
 
 
@@ -35,7 +36,8 @@ class Capability(StrEnum):
 class DeviceDriver(StrEnum):
     """Which implementation backs a configured device.
 
-    Real hardware is added here later, e.g. ``ESP32_MQTT = "esp32_mqtt"``.
+    Both kinds can run side by side, so devices can move to hardware one at a time.
     """
 
     VIRTUAL = "virtual"
+    ESP32_MQTT = "esp32_mqtt"

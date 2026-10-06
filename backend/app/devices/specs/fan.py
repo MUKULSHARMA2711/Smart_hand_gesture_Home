@@ -23,5 +23,8 @@ class SetSpeed(CommandModel):
     action: Literal["set_speed"] = "set_speed"
     value: int = Field(ge=SPEED_MIN, le=SPEED_MAX, strict=True)
 
+    def effect(self) -> dict:
+        return {"speed": self.value}
+
 
 FAN_SPEC = DeviceSpec(DeviceType.FAN, FanState, [TurnOn, TurnOff, SetSpeed])

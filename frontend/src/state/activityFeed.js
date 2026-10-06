@@ -3,6 +3,8 @@
  * into one time-ordered stream for the observability console. Nothing is invented.
  */
 
+import { describeStateChange } from '../lib/format'
+
 export const SOURCE_TAGS = {
   frontend: 'DASHBOARD',
   gesture: 'GESTURE',
@@ -28,6 +30,13 @@ export function deviceEventLine(event, deviceNames = {}) {
   return `${name} → ${result}`
 }
 
+/** Events a hardware device reports itself over MQTT: availability changes and state reports. */
+export function hardwareEventLine(event, deviceNames = {}) {
+  const name = (deviceNames[event.device_id] ?? event.device_id).toUpperCase()
+  if (event.event_type === 'availability') return `${name} → ${event.action.toUpperCase()}`
+  return `${name} → REPORTED ${describeStateChange(event.previous_state, event.new_state).toUpperCase()}`
+}
+
 /** "LIVING ROOM FAN → ENERGY ANOMALY 170.0 W (normal 34.6–42.5 W)" from a real ML event. */
 export function anomalyEventLine(event, deviceNames = {}) {
   const name = (deviceNames[event.device_id] ?? event.device_id).toUpperCase()
@@ -50,7 +59,18 @@ export function buildActivityFeed({ deviceEvents = [], gestureEvents = [], aiInt
             detail: `Isolation Forest · score ${event.details?.score ?? '—'}`,
             tone: 'error',
           }
-        : {
+        : event.event_type === 'availability' || event.event_type === 'state_report'
+          ? {
+              id: `device:${event.event_id}`,
+              timestamp: event.timestamp,
+              kind: 'device',
+              source: event.source,
+              tag: 'MQTT',
+              text: hardwareEventLine(event, deviceNames),
+              detail: event.details?.reason?.replaceAll('_', ' '),
+              tone: event.event_type === 'availability' && event.action !== 'online' ? 'warning' : 'ok',
+            }
+          : {
             id: `device:${event.event_id}`,
             timestamp: event.timestamp,
             kind: 'device',

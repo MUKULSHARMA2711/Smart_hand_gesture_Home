@@ -27,6 +27,9 @@ async def get_device(device_id: str, home: HomeStateDep) -> DeviceSnapshot:
         **_NOT_FOUND,
         400: {"model": ErrorResponse, "description": "Action not supported by this device"},
         422: {"model": ErrorResponse, "description": "Invalid command value or malformed request"},
+        502: {"model": ErrorResponse, "description": "Hardware acknowledged a different state"},
+        503: {"model": ErrorResponse, "description": "Device offline or unreachable"},
+        504: {"model": ErrorResponse, "description": "Hardware did not acknowledge in time"},
     },
 )
 async def execute_command(

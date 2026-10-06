@@ -6,3 +6,5 @@ pydantic-settings>=2.4,<3.0
 anthropic>=1.11,<2.0
 # Machine learning (Phase 5): Random Forest + Isolation Forest.
 scikit-learn>=1.5,<2.0
+# MQTT transport for ESP32 hardware (Phase 7). Only used when SMARTHOME_MQTT_ENABLED=true.
+paho-mqtt>=2.1,<3.0
