@@ -157,6 +157,92 @@ describe('wake phrase in a live session', () => {
   })
 })
 
+describe('wake → command transition', () => {
+  const live = () => FakeRecognition.instances.filter((r) => r.started && !r.aborted && r.onresult)
+
+  it('exact final transcript "hey nova" opens the command window', () => {
+    const { voice, states } = session()
+    voice.start()
+    current().say('hey nova')
+    expect(states.at(-1)).toBe('command')
+  })
+
+  it('wakes on interim "hey nova" even if the browser never finalises it (the Edge case)', async () => {
+    const { voice, states, commands } = session()
+    voice.start()
+    current().say('hey nova', false) // shown as "Heard: hey nova"
+    expect(states.at(-1)).toBe('command') // regression: stayed in "wake" before
+
+    current().say('turn on the fan')
+    await flush()
+    expect(commands).toEqual(['turn on the fan'])
+  })
+
+  it('handles text left unfinalised when the browser ends the session', async () => {
+    const { voice, commands } = session()
+    voice.start()
+    current().say('hey nova turn on the fan', false)
+    current().end() // Edge ends the session without a final result
+    await flush()
+    expect(commands).toEqual(['turn on the fan'])
+  })
+
+  it('wake + command in one final result submits only the command', async () => {
+    const { voice, commands } = session()
+    voice.start()
+    current().say('hey nova', false)
+    current().say('hey nova turn on the fan') // interim, then the final of the same utterance
+    await flush()
+    expect(commands).toEqual(['turn on the fan'])
+  })
+
+  it('never submits the wake phrase or its leftover pieces as a command', async () => {
+    const { voice, commands, states } = session()
+    voice.start()
+    current().say('hey nova', false)
+    current().say('hey') // a split final: "hey" | "nova"
+    current().say('nova')
+    current().say('Hey Nova.')
+    await flush()
+    expect(commands).toEqual([])
+    expect(states.at(-1)).toBe('command')
+  })
+
+  it('the command window expires back to listening for the wake phrase', async () => {
+    const { voice, states, commands } = session()
+    voice.start()
+    current().say('hey nova', false)
+    vi.advanceTimersByTime(8000)
+    expect(states.at(-1)).toBe('wake')
+    current().say('turn on the fan')
+    await flush()
+    expect(commands).toEqual([]) // needs the wake phrase again
+  })
+
+  it('"yes" after the wake phrase is sent as an ordinary request (the backend decides; it cannot unlock)', async () => {
+    const { voice, commands } = session()
+    voice.start()
+    current().say('Hey Nova')
+    current().say('yes')
+    await flush()
+    expect(commands).toEqual(['yes'])
+  })
+
+  it('repeated wake phrases and browser restarts never create duplicate listeners', () => {
+    const { voice, states } = session()
+    voice.start()
+    for (let i = 0; i < 3; i += 1) {
+      current().say('hey nova', false)
+      current().say('hey nova')
+    }
+    expect(live()).toHaveLength(1)
+    current().end() // the browser ends the session: one replacement, still in the command window
+    current().end()
+    expect(live()).toHaveLength(1)
+    expect(states.at(-1)).toBe('command')
+  })
+})
+
 describe('voice session', () => {
   it('reports unsupported browsers without crashing', () => {
     const { voice, states } = session({ Recognition: null })

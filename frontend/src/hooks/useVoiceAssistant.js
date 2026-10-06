@@ -7,6 +7,15 @@ import { cancelSpeech, chime, createVoiceSession, getSpeechRecognition, speakTex
  * /ai/command pipeline as typing). Stops on unmount, so leaving the page never leaves a
  * microphone listener running.
  */
+/** Opt-in diagnostics: run localStorage.setItem('voiceDebug', '1') in the console, then reload. */
+function voiceDebugEnabled() {
+  try {
+    return globalThis.localStorage?.getItem('voiceDebug') === '1'
+  } catch {
+    return false
+  }
+}
+
 export function useVoiceAssistant({ send, deviceNames }) {
   const [voice, setVoice] = useState({ state: 'off', message: null, heard: '' })
   const session = useRef(null)
@@ -26,6 +35,7 @@ export function useVoiceAssistant({ send, deviceNames }) {
       Recognition: getSpeechRecognition(),
       speak: speakText,
       sound: chime,
+      debug: voiceDebugEnabled(),
       onState: (update) => setVoice((current) => ({ ...current, ...update })),
       onHeard: (heard) => setVoice((current) => ({ ...current, heard })),
       onCommand: async (text) => {

@@ -15,6 +15,10 @@
 // reliably. The match is on normalised words, so punctuation, case and spacing do not matter.
 const HEY = new Set(['hey', 'hay', 'hi'])
 const NOVA = 'nova'
+const isWakeFragment = (text) => {
+  const list = words(text)
+  return list.length > 0 && list.length <= 2 && list.every(({ word }) => HEY.has(word) || word === NOVA)
+}
 const WAKE_WORD_OFFSET = 2 // "hey" must be within the first words of an utterance
 const WAKE_JOIN_MS = 4000 // a wake phrase split across two results, joined within this time
 
@@ -82,6 +86,7 @@ export function createVoiceSession({
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (id) => clearTimeout(id),
   now = () => Date.now(),
+  debug = false, // console.debug traces of transcripts, wake matches and transitions
 }) {
   let active = false
   let paused = false // recognition deliberately stopped while processing / speaking
@@ -89,9 +94,14 @@ export function createVoiceSession({
   let recognizer = null
   let commandTimer = null
   let restarts = []
-  let lastFinal = null // { text, at }: the previous final result while waiting for the wake phrase
+  let lastFinal = null // { text, at }: the previous final result, to join a split wake phrase
+  let interimText = '' // what the current utterance sounds like so far (not finalised yet)
 
-  const setState = (state, message = null) => onState({ state, message })
+  const log = debug ? (...args) => console.debug('[voice]', ...args) : () => {}
+  const setState = (state, message = null) => {
+    log('STATE:', state, message ?? '')
+    onState({ state, message })
+  }
 
   function release() {
     clearTimer(commandTimer)
@@ -114,7 +124,20 @@ export function createVoiceSession({
     setState('error', message)
   }
 
+  function detach() {
+    if (!recognizer) return
+    recognizer.onresult = recognizer.onerror = recognizer.onend = null
+    try {
+      recognizer.abort()
+    } catch {
+      // already stopped
+    }
+    recognizer = null
+  }
+
   function listen() {
+    detach() // never two live recognizers
+    interimText = ''
     const recognition = new Recognition()
     recognition.lang = lang
     recognition.continuous = true
@@ -126,6 +149,7 @@ export function createVoiceSession({
     recognizer = recognition
     try {
       recognition.start()
+      log('RECOGNITION: started, listening for', mode === 'wake' ? 'the wake phrase' : 'a command')
     } catch (error) {
       fail(`Could not start speech recognition: ${error?.message ?? error}`)
       return
@@ -143,61 +167,92 @@ export function createVoiceSession({
       if (result.isFinal) finals.push(text.trim())
       else interim += text
     }
+    interimText = interim.trim()
+    if (finals.length) log('TRANSCRIPT (final):', finals)
     onHeard(interim || finals.join(' '))
     for (const text of finals) {
       if (!active || paused) break
       handleFinal(text)
     }
+    // "Heard: hey nova" is the *interim* text. Browsers (notably Edge) may not finalise a short
+    // phrase before ending the session, so the wake phrase is also detected here. It only
+    // opens the command window; commands are still taken from final text.
+    if (active && !paused && mode === 'wake' && interimText) {
+      const { woke } = splitWake(interimText, recentFinal())
+      if (woke) {
+        log('WAKE MATCH (interim):', interimText)
+        lastFinal = null
+        sound('wake')
+        enterCommandMode()
+      }
+    }
+  }
+
+  /** The previous final result, only if it ends in a dangling "hey" (a split "hey" | "nova …"). */
+  function recentFinal() {
+    if (!lastFinal || now() - lastFinal.at > WAKE_JOIN_MS) return ''
+    const list = words(lastFinal.text)
+    return list.length && HEY.has(list.at(-1).word) ? lastFinal.text : ''
+  }
+
+  /** The request without any (repeated) wake phrase in front of it: "hey nova turn on" → "turn on". */
+  function stripWake(text) {
+    let request = text
+    for (let match = splitWake(request); match.woke; match = splitWake(request)) request = match.command
+    return isWakeFragment(request) ? '' : request
   }
 
   function handleFinal(text) {
+    // The browser may end a result mid-phrase ("hey" | "nova, turn on the fan"):
+    // try this result together with the one just before it.
+    const { woke, command } = splitWake(text, recentFinal())
+    log('WAKE MATCH:', woke, '· EXTRACTED COMMAND:', JSON.stringify(command), '· mode:', mode)
     if (mode === 'wake') {
-      // The browser may end a result mid-phrase ("hey" | "nova, turn on the fan"):
-      // try this result together with the one just before it.
-      const previous = lastFinal && now() - lastFinal.at <= WAKE_JOIN_MS ? lastFinal.text : ''
-      const { woke, command } = splitWake(text, previous)
       if (!woke) {
         lastFinal = { text, at: now() } // everything else is ignored until the wake phrase
         return
       }
       lastFinal = null
       sound('wake')
-      if (command) dispatch(command)
+      const request = stripWake(command)
+      if (request) dispatch(request)
       else enterCommandMode()
       return
     }
-    const { woke, command } = splitWake(text) // "Hey Nova" may be repeated
-    const request = woke ? command : text
-    if (request) dispatch(request) // the wake phrase alone is never sent as a command
+    lastFinal = { text, at: now() }
+    if (woke) {
+      const request = stripWake(command)
+      if (request) dispatch(request) // "Hey Nova" repeated, or completed by this result
+      return // the wake phrase alone is never sent as a command
+    }
+    if (isWakeFragment(text)) return // "hey" / "nova" left over from a split wake phrase
+    dispatch(text)
   }
 
   function enterCommandMode() {
     mode = 'command'
     setState('command')
     clearTimer(commandTimer)
+    log('COMMAND WINDOW: started,', commandWindowMs, 'ms')
     commandTimer = setTimer(() => {
       commandTimer = null
       if (active && !paused && mode === 'command') {
+        log('COMMAND WINDOW: expired')
         mode = 'wake'
+        lastFinal = null
         setState('wake', 'No command heard.')
       }
     }, commandWindowMs)
   }
 
   async function dispatch(text) {
+    log('SUBMIT COMMAND:', JSON.stringify(text))
     lastFinal = null
+    interimText = ''
     clearTimer(commandTimer)
     commandTimer = null
     paused = true
-    if (recognizer) {
-      recognizer.onresult = recognizer.onerror = recognizer.onend = null
-      try {
-        recognizer.abort() // do not listen while processing or speaking (it would hear itself)
-      } catch {
-        // already stopped
-      }
-      recognizer = null
-    }
+    detach() // do not listen while processing or speaking (it would hear itself)
     setState('processing', text)
     let result
     try {
@@ -226,6 +281,15 @@ export function createVoiceSession({
 
   function handleEnd() {
     if (!active || paused) return
+    log('RECOGNITION: ended by the browser')
+    // Text the browser never finalised before ending the session is handled, not dropped.
+    const unfinished = interimText
+    interimText = ''
+    if (unfinished) {
+      log('TRANSCRIPT (unfinalised at end):', unfinished)
+      handleFinal(unfinished)
+      if (!active || paused) return // it was a command: dispatch restarts listening itself
+    }
     // Browsers end recognition after silence or a time limit: restart, but not forever.
     const t = now()
     restarts = restarts.filter((at) => t - at < restartWindowMs)
@@ -234,8 +298,8 @@ export function createVoiceSession({
       return
     }
     restarts.push(t)
-    recognizer = null
-    listen()
+    listen() // detaches the ended recognizer, so a late event from it cannot start another session
+    if (mode === 'command') setState('command') // the command window keeps running
   }
 
   return {
