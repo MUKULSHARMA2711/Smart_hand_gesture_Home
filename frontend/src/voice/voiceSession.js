@@ -12,17 +12,60 @@
  */
 
 // "Hey IntelliHome" as recognisers tend to transcribe it.
-const WAKE = /\b(?:hey|hi|okay|ok)[\s,!.]+intelli[\s-]?(?:home|homes)\b[\s,!.:]*/i
+// "Hey IntelliHome" as speech services actually transcribe it: "IntelliHome", "Intelli Home",
+// "intelli-home", "Intel home", "intelly home", "intelligent home"... The match is on
+// normalised words, so punctuation, case and hyphens do not matter.
+const HEY = new Set(['hey', 'hay', 'hi'])
+const INTELLI = /^(?:intel+[iye]?|intelligent)$/ // intel, intell, intelli, intelly, inteli...
+const INTELLIHOME = /^intel+[iye]?homes?$/ // intellihome, intelihome, intellyhome...
+const HOME = /^homes?$/
+const WAKE_WORD_OFFSET = 2 // "hey" must be within the first words of an utterance
+const WAKE_JOIN_MS = 4000 // a wake phrase split across two results, joined within this time
 
 export function getSpeechRecognition(scope = globalThis) {
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null
 }
 
-/** Whether `text` contains the wake phrase, and the command spoken after it (if any). */
-export function splitWake(text) {
-  const match = WAKE.exec(text)
-  if (!match) return { woke: false, command: '' }
-  return { woke: true, command: text.slice(match.index + match[0].length).trim() }
+/** Words of `text`, lower-cased, punctuation removed, hyphens treated as spaces; with their end offsets. */
+function words(text) {
+  const out = []
+  for (const match of text.matchAll(/[^\s\-‐–—_]+/g)) {
+    const word = match[0].toLowerCase().replace(/[^a-z0-9']/g, '').replace(/^'+|'+$/g, '')
+    if (word) out.push({ word, end: match.index + match[0].length })
+  }
+  return out
+}
+
+/** "Hey, Intelli-Home!" → "hey intelli home". */
+export function normalizeTranscript(text) {
+  return words(text)
+    .map((w) => w.word)
+    .join(' ')
+}
+
+/**
+ * Whether `text` (optionally continuing `previous`, the result just before it) contains the
+ * wake phrase, and the command spoken after it. "hey" must start an utterance (within its
+ * first few words) and be followed directly by IntelliHome, so ordinary speech does not wake
+ * the assistant. The command keeps the user's own wording (apostrophes, case).
+ */
+export function splitWake(text, previous = '') {
+  const prior = previous.trim()
+  const full = prior ? `${prior} ${text}` : text
+  const list = words(full)
+  const boundary = prior ? words(prior).length : 0
+  for (let i = 0; i < list.length; i += 1) {
+    if (!HEY.has(list[i].word)) continue
+    const offset = i < boundary ? i : i - boundary
+    if (offset > WAKE_WORD_OFFSET) continue
+    const next = list[i + 1]?.word
+    let last = -1
+    if (next && INTELLIHOME.test(next)) last = i + 1
+    else if (next && INTELLI.test(next) && HOME.test(list[i + 2]?.word ?? '')) last = i + 2
+    if (last < 0) continue
+    return { woke: true, command: full.slice(list[last].end).replace(/^[\s,.;:!?'"-]+/, '').trim() }
+  }
+  return { woke: false, command: '' }
 }
 
 const ERROR_MESSAGES = {
@@ -54,6 +97,7 @@ export function createVoiceSession({
   let recognizer = null
   let commandTimer = null
   let restarts = []
+  let lastFinal = null // { text, at }: the previous final result while waiting for the wake phrase
 
   const setState = (state, message = null) => onState({ state, message })
 
@@ -115,16 +159,24 @@ export function createVoiceSession({
   }
 
   function handleFinal(text) {
-    const { woke, command } = splitWake(text)
     if (mode === 'wake') {
-      if (!woke) return // everything else is ignored until the wake phrase
+      // The browser may end a result mid-phrase ("hey intelli" | "home, turn on the fan"):
+      // try this result together with the one just before it.
+      const previous = lastFinal && now() - lastFinal.at <= WAKE_JOIN_MS ? lastFinal.text : ''
+      const { woke, command } = splitWake(text, previous)
+      if (!woke) {
+        lastFinal = { text, at: now() } // everything else is ignored until the wake phrase
+        return
+      }
+      lastFinal = null
       sound('wake')
       if (command) dispatch(command)
       else enterCommandMode()
       return
     }
-    const request = woke ? command : text // "Hey IntelliHome" may be repeated
-    if (request) dispatch(request)
+    const { woke, command } = splitWake(text) // "Hey IntelliHome" may be repeated
+    const request = woke ? command : text
+    if (request) dispatch(request) // the wake phrase alone is never sent as a command
   }
 
   function enterCommandMode() {
@@ -141,6 +193,7 @@ export function createVoiceSession({
   }
 
   async function dispatch(text) {
+    lastFinal = null
     clearTimer(commandTimer)
     commandTimer = null
     paused = true
@@ -204,6 +257,7 @@ export function createVoiceSession({
       paused = false
       mode = 'wake'
       restarts = []
+      lastFinal = null
       listen()
     },
     stop() {

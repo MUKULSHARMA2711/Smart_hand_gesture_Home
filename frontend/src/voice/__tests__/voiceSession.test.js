@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spokenSummary, voiceStatusLabel } from '../../lib/assistant'
-import { createVoiceSession, speakText, splitWake } from '../voiceSession'
+import { createVoiceSession, normalizeTranscript, speakText, splitWake } from '../voiceSession'
 
 /** A stand-in for the browser's SpeechRecognition that tests drive by hand. */
 class FakeRecognition {
@@ -66,6 +66,93 @@ describe('wake phrase', () => {
     ['hey intelligent', false, ''],
   ])('%s', (text, woke, command) => {
     expect(splitWake(text)).toEqual({ woke, command })
+  })
+})
+
+describe('Edge wake-phrase variants', () => {
+  it.each([
+    ['hey intellihome', 'exact'],
+    ['Hey IntelliHome.', 'case and punctuation'],
+    ['hey intelli home', 'split word'],
+    ['hey intel home', 'Intel'],
+    ['hey intelly home', 'intelly'],
+    ['Hey intelli-home!', 'hyphen'],
+    ['Hey, Intelli. Home?', 'punctuation between words'],
+    ['hey  INTELLI   home', 'extra whitespace'],
+    ['hay intellihome', 'hey heard as hay'],
+    ['hey intelligent home', 'intelligent'],
+    ['um hey intel home', 'short filler first'],
+  ])('%s (%s) wakes, with no command', (text) => {
+    expect(splitWake(text)).toEqual({ woke: true, command: '' })
+  })
+
+  it('extracts the command spoken in the same breath, keeping its wording', () => {
+    expect(splitWake('Hey Intel home, turn on the fan')).toEqual({ woke: true, command: 'turn on the fan' })
+    expect(splitWake("hey intelli-home don't unlock the door")).toEqual({ woke: true, command: "don't unlock the door" })
+  })
+
+  it('joins a wake phrase split across two recognition results', () => {
+    expect(splitWake('home turn on the fan', 'hey intelli')).toEqual({ woke: true, command: 'turn on the fan' })
+    expect(splitWake('intellihome', 'hey')).toEqual({ woke: true, command: '' })
+  })
+
+  it.each([
+    'turn on the fan',
+    'hey there',
+    'hey intel how are you',
+    'they intel home office',
+    'I came home and said hey',
+    'the new intel home router is fast hey', // "hey" is not at the start of an utterance
+    'my neighbour said hey intelli home loudly yesterday', // ... nor here
+    'hey home',
+  ])('ordinary speech does not wake: %s', (text) => {
+    expect(splitWake(text).woke).toBe(false)
+  })
+
+  it('normalises transcripts', () => {
+    expect(normalizeTranscript('  Hey, Intelli-Home!  Turn ON the fan. ')).toBe('hey intelli home turn on the fan')
+  })
+})
+
+describe('wake phrase in a live session', () => {
+  it('detects a wake phrase that Edge split across results, and sends only the command', async () => {
+    const { voice, commands } = session()
+    voice.start()
+    current().say('hey intelli')
+    current().say('home turn on the fan')
+    await flush()
+    expect(commands).toEqual(['turn on the fan'])
+  })
+
+  it('split wake phrase with nothing after it opens the command window', async () => {
+    const { voice, states, commands } = session()
+    voice.start()
+    current().say('hey intel')
+    current().say('home')
+    expect(states.at(-1)).toBe('command')
+    current().say('turn off the light')
+    await flush()
+    expect(commands).toEqual(['turn off the light']) // "Hey IntelliHome" itself is never sent
+  })
+
+  it('does not join results that are too far apart', () => {
+    let clock = 0
+    const { voice, states } = session({ now: () => clock })
+    voice.start()
+    current().say('hey intelli')
+    clock += 10_000
+    current().say('home')
+    expect(states.at(-1)).toBe('wake')
+  })
+
+  it('a repeated wake phrase in the command window is not sent as a command', async () => {
+    const { voice, commands } = session()
+    voice.start()
+    current().say('Hey Intel home')
+    current().say('hey intel home')
+    current().say('lock the front door')
+    await flush()
+    expect(commands).toEqual(['lock the front door'])
   })
 })
 
