@@ -3,6 +3,7 @@ import { ChatTurn } from '../components/assistant/ChatTurn'
 import { LifecyclePipeline } from '../components/assistant/LifecyclePipeline'
 import { HouseView } from '../components/house/HouseView'
 import { PredictionCard } from '../components/ml/PredictionCard'
+import { VoicePanel } from '../components/assistant/VoicePanel'
 import { OrbStatus } from '../components/OrbStatus'
 import { Panel } from '../components/Panel'
 import { useAssistantContext } from '../state/AssistantContext'
@@ -161,6 +162,7 @@ export function AssistantPage() {
             ))}
           </div>
           <Composer sending={assistant.sending} onSend={assistant.send} onTyping={assistant.setTyping} />
+          <VoicePanel deviceNames={deviceNames} />
         </div>
       </Panel>
 

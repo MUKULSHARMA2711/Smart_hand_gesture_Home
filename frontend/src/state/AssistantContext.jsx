@@ -32,6 +32,7 @@ export function AssistantProvider({ children }) {
   const [lifecycle, dispatch] = useReducer(lifecycleReducer, IDLE)
   const [heldStates, setHeldStates] = useState({})
   const [gestureActive, setGestureActive] = useState(false)
+  const [voiceListening, setVoiceListening] = useState(false)
   const [contextAtSend, setContextAtSend] = useState(null)
   const timers = useRef([])
   const homeRef = useRef(home)
@@ -122,9 +123,11 @@ export function AssistantProvider({ children }) {
       setTyping,
       gestureActive,
       setGestureActive,
-      orbState: orbState(lifecycle.phase, { gestureActive }),
+      setVoiceListening,
+      // An active gesture camera or a listening microphone both show the core as "listening".
+      orbState: orbState(lifecycle.phase, { gestureActive: gestureActive || voiceListening }),
     }),
-    [assistant, lifecycle, contextAtSend, heldStates, setTyping, gestureActive],
+    [assistant, lifecycle, contextAtSend, heldStates, setTyping, gestureActive, voiceListening],
   )
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>
 }

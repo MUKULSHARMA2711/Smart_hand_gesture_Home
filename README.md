@@ -534,6 +534,34 @@ This is a rule-based check, not language understanding: a negation that comes *a
 the verb ("unlock the door… not!") is not detected. That is why unlocking also needs an
 explicit confirmation.
 
+### Voice: "Hey IntelliHome"
+
+On the AI assistant page, **Enable voice** turns on hands-free control in browsers with
+the Web Speech API (Chrome, Edge).
+
+1. Say "Hey IntelliHome, turn on the living room fan", or say "Hey IntelliHome" and then
+   the request within 8 s.
+2. The recognised text goes to the same `POST /ai/command` pipeline as typed requests, so
+   it gets the same validation, door policy and CommandService path. There is no separate
+   execution path.
+3. The reply is spoken with `speechSynthesis`, built from the backend's actual results
+   ("Done. Living Room Fan is now on."), never from the planner's own text.
+4. A held door unlock is answered without the wake phrase ("yes, unlock it" or "cancel").
+
+The microphone pauses while a request is processed and while the reply is spoken, so the
+assistant never hears itself. Voice stops when it is turned off, when you leave the page,
+when the microphone is denied, on recognition errors, and if the browser keeps ending the
+session. A command window that gets no request returns to waiting for the wake phrase. In
+unsupported browsers the panel says so; typing and gestures still work.
+
+**Privacy:** IntelliHome receives only the recognised text. The browser does the
+recognition; in Chrome and Edge that uses the browser vendor's online speech service, which
+the panel states. The gesture camera is not touched: voice runs on the assistant page, the
+camera on the gesture page.
+
+The logic is in `frontend/src/voice/voiceSession.js`; its tests cover the wake flow,
+timeouts, denial, failures, restart limits and cleanup.
+
 ### Unlocking needs an explicit confirmation
 
 An explicit, non-negated AI request to unlock ("unlock the main door") is **held**, not

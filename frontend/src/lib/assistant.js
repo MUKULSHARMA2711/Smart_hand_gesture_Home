@@ -74,3 +74,53 @@ export function describeAssistantError(turn) {
       return { title: `Request failed: ${turn.transportError}`, hint: null, reason: null }
   }
 }
+
+/** "Living Room Fan → ON" → "Living Room Fan is now on", for speech. */
+function spokenAction(result, deviceNames) {
+  return describeAction(result, deviceNames)
+    .replace(' → ', ' is now ')
+    .replace(/\b(ON|OFF|LOCKED|UNLOCKED)\b/, (word) => word.toLowerCase())
+}
+
+/**
+ * What the assistant says out loud. Built from the backend's actual results (executed,
+ * rejected, failed, held), never from the planner's free text about device actions, so it
+ * cannot claim a change that did not happen. Query answers and backend messages are spoken
+ * as returned.
+ */
+export function spokenSummary(response, deviceNames = {}) {
+  if (!response) return "Sorry, I couldn't reach the assistant. Nothing was changed."
+  if (response.confirmation) return response.confirmation.prompt
+  if (!response.plan_valid) return 'Sorry, I could not make a safe plan for that. Nothing was changed.'
+  const actions = response.actions ?? []
+  const executed = actions.filter((a) => a.status === 'executed' && a.device_id)
+  const problems = actions.filter((a) => a.status === 'rejected' || a.status === 'failed')
+  if (!executed.length && !problems.length) return response.reply // answers, cancellations, help
+  const parts = []
+  if (executed.length) parts.push(`Done. ${executed.map((a) => spokenAction(a, deviceNames)).join(', ')}.`)
+  for (const action of problems.slice(0, 2)) {
+    const name = deviceNames[action.device_id] ?? action.device_id ?? 'That request'
+    parts.push(`${name} was not changed: ${action.reason ?? action.status}`)
+  }
+  return parts.join(' ')
+}
+
+const VOICE_LABELS = {
+  off: 'Voice is off',
+  wake: 'Listening for “Hey IntelliHome”',
+  command: 'Listening for your request…',
+  processing: 'Processing…',
+  speaking: 'Speaking…',
+  unsupported: 'Voice is not supported in this browser',
+}
+
+/** One status line for the voice panel, including the request's real progress. */
+export function voiceStatusLabel(voice, lifecyclePhase) {
+  if (voice.state === 'error') return voice.message ?? 'Voice stopped because of an error.'
+  if (voice.state === 'processing') {
+    if (lifecyclePhase === 'executing') return 'Executing…'
+    if (lifecyclePhase === 'success') return 'Done'
+    if (lifecyclePhase === 'error') return 'Something went wrong'
+  }
+  return VOICE_LABELS[voice.state] ?? voice.state
+}
