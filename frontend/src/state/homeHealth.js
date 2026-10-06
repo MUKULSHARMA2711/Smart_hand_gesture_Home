@@ -34,7 +34,11 @@ export function homeHealth(home, now = Date.now(), anomalies = null) {
       id: 'sensors',
       label: 'Sensors reporting',
       status: sensorsFresh ? 'ok' : 'warning',
-      detail: sensorsFresh ? `Updated ${Math.max(0, Math.round(ageMs / 1000))} s ago` : 'No recent readings',
+      detail: sensorsFresh
+        ? `Updated ${Math.max(0, Math.round(ageMs / 1000))} s ago`
+        : home.environment == null
+          ? 'Sensors unavailable'
+          : 'No recent readings',
     },
   ]
 

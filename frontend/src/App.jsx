@@ -114,11 +114,19 @@ function Shell() {
       <main className="mx-auto max-w-[1440px] px-6 py-6">
         {connectionError && (
           <div role="alert" className="mb-6 rounded-xl border border-red-900 bg-red-950/60 p-4 text-sm text-red-200">
-            <p className="font-semibold">{connectionError}</p>
-            <p className="mt-1">
-              Start the backend with <code className="font-mono">uvicorn app.main:app --reload</code> in{' '}
-              <code className="font-mono">backend/</code>. Expected API at <code className="font-mono">{API_BASE_URL}</code>.
-            </p>
+            <p className="font-semibold">{home ? 'Connection to the backend lost.' : connectionError}</p>
+            {home ? (
+              <p className="mt-1">
+                {connectionError} Showing the last known state from {formatTime(home.timestamp)}; it is not live and
+                commands will fail until the backend is back. Reconnecting automatically.
+              </p>
+            ) : (
+              <p className="mt-1">
+                Start the backend with <code className="font-mono">uvicorn app.main:app --reload</code> in{' '}
+                <code className="font-mono">backend/</code>. Expected API at <code className="font-mono">{API_BASE_URL}</code>.
+                Retrying automatically.
+              </p>
+            )}
           </div>
         )}
 

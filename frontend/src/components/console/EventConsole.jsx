@@ -14,7 +14,7 @@ const TAG_STYLES = {
 const TONE_STYLES = { ok: 'text-slate-200', warning: 'text-amber-200', error: 'text-red-300' }
 
 /** Terminal-style stream of real activity (device events, gestures, AI requests). */
-export function EventConsole({ entries, limit = 12, title = 'Live event stream', emptyText = 'Waiting for activity…', className = '' }) {
+export function EventConsole({ entries, limit = 12, title = 'Live event stream', emptyText = 'No activity yet.', className = '' }) {
   const visible = entries.slice(0, limit)
   return (
     <section className={`console-panel ${className}`} aria-label={title}>

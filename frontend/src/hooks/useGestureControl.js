@@ -21,7 +21,7 @@ function nextDeviceId(devices, currentId) {
  * for future AI targeting), the last action result and the gesture history.
  * The backend decides which device action an intent becomes.
  */
-export function useGestureControl({ devices, onDevicesChanged }) {
+export function useGestureControl({ devices, onDevicesChanged, connected = true }) {
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [configError, setConfigError] = useState(null)
   const [events, setEvents] = useState([])
@@ -49,19 +49,29 @@ export function useGestureControl({ devices, onDevicesChanged }) {
     }
   }, [])
 
+  // Load the backend's mapping and threshold; retry after a reconnect if it failed.
+  const [configLoaded, setConfigLoaded] = useState(false)
   useEffect(() => {
+    if (!connected || configLoaded) return undefined
+    let cancelled = false
     api
       .getGestureConfig()
-      .then((response) =>
+      .then((response) => {
+        if (cancelled) return
         setConfig({
           confidenceThreshold: response.confidence_threshold,
           intents: Object.fromEntries(response.gestures.map(({ gesture, intent }) => [gesture, intent])),
           blockedActions: response.blocked_actions,
-        }),
-      )
-      .catch((error) => setConfigError(error.message))
+        })
+        setConfigLoaded(true)
+        setConfigError(null)
+      })
+      .catch((error) => !cancelled && setConfigError(error.message))
     refreshEvents()
-  }, [refreshEvents])
+    return () => {
+      cancelled = true
+    }
+  }, [connected, configLoaded, refreshEvents])
 
   const execute = useCallback(
     async ({ gesture, confidence }) => {

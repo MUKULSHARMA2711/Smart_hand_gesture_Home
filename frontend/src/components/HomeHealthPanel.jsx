@@ -44,6 +44,7 @@ export function HomeHealthPanel({ home, anomalies = null }) {
               <span className={`mr-2 inline-block w-3 font-bold ${STATUS[check.status].className}`} aria-hidden="true">
                 {STATUS[check.status].icon}
               </span>
+              <span className="sr-only">{check.status === 'ok' ? 'OK: ' : 'Warning: '}</span>
               {check.label}
             </span>
             <span className="text-right text-xs text-slate-400">{check.detail}</span>

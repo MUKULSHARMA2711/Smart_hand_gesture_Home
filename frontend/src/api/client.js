@@ -10,15 +10,28 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, options = {}) {
+// A hung backend must surface as an error, not an endless spinner. The AI planner may
+// legitimately take longer (an LLM with tool calls); the backend caps it at 120 s.
+export const REQUEST_TIMEOUT_MS = 15_000
+export const AI_REQUEST_TIMEOUT_MS = 130_000
+
+export async function request(path, { timeoutMs = REQUEST_TIMEOUT_MS, ...options } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json', ...options.headers },
     })
   } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(`The backend did not respond within ${Math.round(timeoutMs / 1000)} s.`, { code: 'timeout' })
+    }
     throw new ApiError(`Cannot reach the backend at ${API_BASE_URL}.`, { code: 'network_error' })
+  } finally {
+    clearTimeout(timer)
   }
 
   const body = await response.json().catch(() => null)
@@ -47,7 +60,8 @@ export const api = {
     })
   },
 
-  aiCommand: (message) => request('/ai/command', { method: 'POST', body: JSON.stringify({ message }) }),
+  aiCommand: (message) =>
+    request('/ai/command', { method: 'POST', body: JSON.stringify({ message }), timeoutMs: AI_REQUEST_TIMEOUT_MS }),
 
   getAIStatus: () => request('/ai/status'),
 

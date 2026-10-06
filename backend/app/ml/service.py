@@ -22,7 +22,7 @@ from app.ml.anomaly import MODEL_NAME as ANOMALY_MODEL
 from app.ml.anomaly import EnergyAnomalyDetector
 from app.ml.dataset import generate_fan_dataset, generate_power_dataset
 from app.ml.errors import InvalidFeatureError, PredictionNotSupportedError
-from app.ml.features import FAN_DEVICE_ID, describe_setting, fan_features, setting_level
+from app.ml.features import FAN_DEVICE_ID, describe_setting, fan_features, feature_errors, setting_level
 from app.ml.models import (
     SIMULATED_DATA_NOTE,
     AnomalyReport,
@@ -94,6 +94,11 @@ class MLService:
         snapshot = snapshot or self._home.snapshot()
         features = fan_features(snapshot, self._clock(), self._events.recent(limit=50), fan_id=device_id)
         if overrides:
+            errors = feature_errors(overrides)
+            if errors:
+                raise InvalidFeatureError(
+                    "Invalid features: " + "; ".join(f"{e['feature']}: {e['message']}" for e in errors), errors
+                )
             features.update(overrides)
         try:
             return self._models.predictor.predict(features, device_name=device.name, now=datetime.now(UTC))

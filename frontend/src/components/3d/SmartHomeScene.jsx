@@ -54,6 +54,7 @@ export default function SmartHomeScene({
   reducedMotion = false,
   active = true,
   labelLayer = null,
+  onContextLost,
 }) {
   const frameloop = !active ? 'never' : reducedMotion ? 'demand' : 'always'
   return (
@@ -63,6 +64,11 @@ export default function SmartHomeScene({
       camera={{ position: compact ? [10.4, 9.2, 12.2] : [11.2, 9.8, 13], fov: compact ? 36 : 38 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       onPointerMissed={() => onSelect?.(null)}
+      onCreated={({ gl }) => {
+        // A lost GPU context (driver reset, too many contexts) leaves a blank canvas without
+        // throwing, so the error boundary never sees it. Report it so the 2D plan takes over.
+        gl.domElement.addEventListener('webglcontextlost', () => onContextLost?.(), { once: true })
+      }}
     >
       <LabelLayerContext.Provider value={labelLayer}>
       <color attach="background" args={[COLORS.background]} />

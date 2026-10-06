@@ -1,9 +1,18 @@
-"""Maps domain and validation errors to a consistent JSON error envelope."""
+"""Maps every error to one JSON envelope: ``{"error": {"code", "message", "details"}}``.
+
+Domain errors keep their own code; framework errors (unknown route, wrong method,
+malformed request) and unexpected exceptions are mapped here, so clients never have
+to parse a second error format.
+"""
+
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.ai.errors import AIUnavailableError
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.domain.errors import (
     DeviceNotFoundError,
@@ -16,6 +25,8 @@ from app.domain.errors import (
 from app.gestures.errors import GestureActionBlockedError, GestureRejectedError
 from app.ml.errors import InvalidFeatureError, MLUnavailableError, PredictionNotSupportedError
 
+logger = logging.getLogger(__name__)
+
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     DeviceNotFoundError: 404,
     UnsupportedCommandError: 400,
@@ -27,7 +38,10 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     PredictionNotSupportedError: 400,
     InvalidFeatureError: 422,
     MLUnavailableError: 503,
+    AIUnavailableError: 503,
 }
+
+_HTTP_CODES = {404: "not_found", 405: "method_not_allowed"}
 
 
 def _status_for(exc: DomainError) -> int:
@@ -57,3 +71,19 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             422, "invalid_request", "Request validation failed.", errors
         )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        code = _HTTP_CODES.get(exc.status_code, "http_error")
+        message = (
+            f"No endpoint matches {request.method} {request.url.path}."
+            if exc.status_code in _HTTP_CODES
+            else str(exc.detail)
+        )
+        return _error_response(exc.status_code, code, message)
+
+    @app.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # Log the full traceback server-side; never leak internals to the client.
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return _error_response(500, "internal_error", "An unexpected server error occurred.")

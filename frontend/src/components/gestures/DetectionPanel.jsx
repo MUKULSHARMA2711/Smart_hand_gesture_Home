@@ -24,12 +24,12 @@ function ConfidenceMeter({ confidence, threshold }) {
 
 function StatusLine({ live, threshold }) {
   const thresholdPct = `${Math.round(threshold * 100)}%`
-  if (live.gesture === 'NEUTRAL') return <p>Show your hand to the camera.</p>
-  if (!isActionable(live.gesture)) return <p>Hand visible, but no known gesture.</p>
+  if (live.gesture === 'NEUTRAL') return <p>No hand detected. Show your hand to the camera.</p>
+  if (!isActionable(live.gesture)) return <p>Hand visible, but no known gesture. Nothing will be sent.</p>
   if (live.confidence < threshold) {
     return (
       <p className="text-amber-700 dark:text-amber-400">
-        <span aria-hidden="true">⚠ </span>Below the {thresholdPct} threshold — will not execute.
+        <span aria-hidden="true">⚠ </span>Gesture ignored — confidence too low (below the {thresholdPct} threshold).
       </p>
     )
   }

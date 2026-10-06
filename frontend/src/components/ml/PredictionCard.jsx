@@ -1,4 +1,4 @@
-import { formatProbability, predictionHeadline, predictionReasons } from '../../lib/ml'
+import { featureLabel, formatProbability, predictionHeadline, predictionReasons } from '../../lib/ml'
 import { Panel } from '../Panel'
 
 /**
@@ -9,7 +9,7 @@ export function PredictionCard({ prediction, onAskAI, title = 'AI prediction' })
   if (!prediction) {
     return (
       <Panel title={title}>
-        <p className="text-sm text-slate-400">Prediction unavailable.</p>
+        <p className="text-sm text-slate-400">No prediction available.</p>
       </Panel>
     )
   }
@@ -32,6 +32,12 @@ export function PredictionCard({ prediction, onAskAI, title = 'AI prediction' })
         <div className="absolute -top-1 h-3.5 w-0.5 bg-white/70" style={{ left: `${prediction.threshold * 100}%` }} />
       </div>
       <p className="sr-only">{predictionHeadline(prediction)}</p>
+      {prediction.reliable === false && (
+        <p role="status" className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <span aria-hidden="true">⚠ </span>Low confidence: sensor data was unavailable, so typical values were used for{' '}
+          {prediction.missing_features.map(featureLabel).join(', ')}.
+        </p>
+      )}
       {reasons.length > 0 && (
         <div className="mt-3">
           <p className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">Main factors</p>

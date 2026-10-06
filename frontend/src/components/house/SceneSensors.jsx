@@ -6,7 +6,24 @@ import { AnimatedNumber } from '../SensorStrip'
  * view. Rendered as DOM (not inside the scene) so it never overlaps the house.
  */
 export function SceneSensors({ environment, energy, className = '' }) {
-  if (!environment || !energy) return null
+  if (!energy) return null
+  if (!environment) {
+    // Sensors offline or reported implausible values: say so, never show stale or guessed numbers.
+    return (
+      <dl className={`scene-sensors ${className}`} aria-label="Live sensor readings">
+        <div>
+          <dt>Sensors</dt>
+          <dd className="text-amber-300">Unavailable</dd>
+        </div>
+        <div>
+          <dt>Power</dt>
+          <dd>
+            <AnimatedNumber value={energy.total_power_w} format={formatPower} />
+          </dd>
+        </div>
+      </dl>
+    )
+  }
   const people = environment.occupancy.occupant_count
   return (
     <dl className={`scene-sensors ${className}`} aria-label="Live sensor readings">

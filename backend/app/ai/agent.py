@@ -10,10 +10,13 @@
 All actions are validated before any of them executes.
 """
 
+import asyncio
 import logging
+from typing import NoReturn
 
 from pydantic import ValidationError
 
+from app.ai.errors import AIUnavailableError
 from app.ai.history import InMemoryAgentHistory
 from app.ai.models import ActionPlan, ActionResult, ActionStatus, AgentResponse
 from app.ai.providers.base import AIProvider, AIProviderError, PlanningRequest
@@ -33,11 +36,14 @@ class HomeAgent:
         tools: AgentTools,
         validator: PlanValidator,
         history: InMemoryAgentHistory,
+        *,
+        timeout_s: float = 120.0,
     ) -> None:
         self._provider = provider
         self._tools = tools
         self._validator = validator
         self._history = history
+        self._timeout_s = timeout_s
 
     @property
     def provider(self) -> AIProvider:
@@ -48,12 +54,17 @@ class HomeAgent:
         session = self._tools.session(context)
         history = tuple(self._history.recent(limit=3))
         try:
-            raw_plan = await self._provider.plan(
-                PlanningRequest(message=message, context=context, tools=session, history=history)
+            raw_plan = await asyncio.wait_for(
+                self._provider.plan(PlanningRequest(message=message, context=context, tools=session, history=history)),
+                timeout=self._timeout_s,
             )
         except AIProviderError as exc:
-            logger.warning("AI provider failed: %s", exc)
-            return self._finish(message, reply="The AI planner is unavailable, so nothing was changed.", errors=[str(exc)])
+            self._unavailable(message, str(exc))
+        except TimeoutError:
+            self._unavailable(message, f"The AI provider did not respond within {self._timeout_s:g} s.")
+        except Exception as exc:  # a provider bug must not surface as a raw server error
+            logger.exception("AI provider raised an unexpected error")
+            self._unavailable(message, f"The AI provider failed unexpectedly ({type(exc).__name__}).")
 
         try:
             plan = ActionPlan.model_validate(raw_plan)
@@ -76,6 +87,12 @@ class HomeAgent:
 
         return self._finish(message, reply=plan.message, results=results, device_events=device_events, plan_valid=True)
 
+    def _unavailable(self, message: str, reason: str) -> NoReturn:
+        """Record the failed attempt (nothing executed), then report it as a structured error."""
+        logger.warning("AI provider unavailable: %s", reason)
+        response = self._finish(message, reply="The AI planner is unavailable, so nothing was changed.", errors=[reason])
+        raise AIUnavailableError(reason, interaction_id=response.interaction_id)
+
     async def _execute(self, item: ValidatedAction, session: ToolSession) -> tuple[ActionResult, DeviceEvent | None]:
         action = item.action
         base = {
@@ -96,6 +113,12 @@ class HomeAgent:
             event = await self._tools.control_device(action.device_id, item.command)
         except DomainError as exc:
             return ActionResult(**base, status=ActionStatus.FAILED, code=exc.code, reason=exc.message), None
+        except Exception:
+            # Report this action as failed and keep the results of the others (a partial plan
+            # must still say exactly what ran). CommandService logs no event for a failed command.
+            logger.exception("AI action %s on %s failed unexpectedly", action.intent, action.device_id)
+            reason = "The device command failed unexpectedly; the device state was not reported as changed."
+            return ActionResult(**base, status=ActionStatus.FAILED, code="internal_error", reason=reason), None
         return (
             ActionResult(
                 **base,

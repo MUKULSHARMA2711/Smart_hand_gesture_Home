@@ -97,6 +97,7 @@ def build_container(settings: Settings, *, ai_provider: AIProvider | None = None
         tools=AgentTools(home_state, event_store, command_service, ml_service),
         validator=PlanValidator(registry, resolver, SecurityPolicy(allow_ai_unlock=settings.ai_allow_unlock)),
         history=agent_history,
+        timeout_s=settings.ai_request_timeout_s,
     )
 
     return Container(

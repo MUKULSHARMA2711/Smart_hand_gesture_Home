@@ -36,7 +36,7 @@ export function HomeDataProvider({ children }) {
           ...current,
           prediction: prediction.status === 'fulfilled' ? prediction.value : null,
           anomalies: anomalies.status === 'fulfilled' ? anomalies.value : null,
-          error: prediction.status === 'rejected' ? prediction.reason.message : null,
+          error: [prediction, anomalies].find((result) => result.status === 'rejected')?.reason.message ?? null,
         }))
       },
     )
@@ -45,9 +45,20 @@ export function HomeDataProvider({ children }) {
     }
   }, [dashboard.events])
 
+  // Model metadata: loaded once connected, and retried after a reconnect if it failed.
+  const { connected } = dashboard
+  const haveMlStatus = ml.status != null
   useEffect(() => {
-    api.getMLStatus().then((status) => setMl((current) => ({ ...current, status }))).catch(() => {})
-  }, [])
+    if (!connected || haveMlStatus) return undefined
+    let cancelled = false
+    api
+      .getMLStatus()
+      .then((status) => !cancelled && setMl((current) => ({ ...current, status })))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [connected, haveMlStatus])
 
   const { sendCommand: rawSendCommand, refresh } = dashboard
 

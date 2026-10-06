@@ -3,6 +3,7 @@
 import pytest
 
 from app.ai.agent import HomeAgent
+from app.ai.errors import AIUnavailableError
 from app.ai.history import InMemoryAgentHistory
 from app.ai.models import ActionStatus, AgentResponse
 from app.ai.tools import AgentTools
@@ -155,11 +156,16 @@ async def test_malformed_plans_execute_nothing(raw_plan) -> None:
 async def test_provider_failure_executes_nothing() -> None:
     h = Harness(error="network down")
 
-    response = await h.ask()
+    with pytest.raises(AIUnavailableError) as raised:
+        await h.ask()
 
-    assert response.plan_valid is False
-    assert response.errors == ["network down"]
+    assert raised.value.code == "ai_unavailable"
+    assert raised.value.details["reason"] == "network down"
     assert h.commands.calls == []
+    # The failed attempt is still recorded in the assistant history.
+    [recorded] = h.agent._history.recent()
+    assert (recorded.plan_valid, recorded.errors) == (False, ["network down"])
+    assert raised.value.details["interaction_id"] == recorded.interaction_id
 
 
 # --- Door security ---------------------------------------------------------------------------------

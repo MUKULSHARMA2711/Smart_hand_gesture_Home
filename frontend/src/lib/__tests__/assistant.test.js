@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changedDeviceStates, describeAction } from '../assistant'
+import { changedDeviceStates, describeAction, describeAssistantError } from '../assistant'
 
 const names = { fan_living_room: 'Living Room Fan', door_main: 'Main Door' }
 
@@ -29,5 +29,24 @@ describe('changedDeviceStates', () => {
       ],
     }
     expect(changedDeviceStates(response)).toEqual([{ id: 'fan_living_room', state: { is_on: true, speed: 70 } }])
+  })
+})
+
+describe('assistant failures', () => {
+  it('reports an AI outage as unavailable, and says nothing changed', () => {
+    const error = describeAssistantError({ transportError: 'AI service is currently unavailable.', errorCode: 'ai_unavailable', errorReason: 'no key' })
+    expect(error).toEqual({
+      title: 'AI service is currently unavailable.',
+      hint: 'Nothing was changed. Device controls, gestures and the dashboard still work.',
+      reason: 'no key',
+    })
+  })
+
+  it.each([
+    ['network_error', 'Cannot reach the IntelliHome backend.'],
+    ['timeout', 'The assistant did not answer in time.'],
+    ['invalid_request', 'Request failed: Message must not be blank.'],
+  ])('%s → %s', (errorCode, title) => {
+    expect(describeAssistantError({ transportError: 'Message must not be blank.', errorCode }).title).toBe(title)
   })
 })

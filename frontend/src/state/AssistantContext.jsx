@@ -26,7 +26,7 @@ import { useHomeData } from './HomeDataContext'
 const AssistantContext = createContext(null)
 
 export function AssistantProvider({ children }) {
-  const { refresh, home } = useHomeData()
+  const { refresh, home, connected } = useHomeData()
   const { emit } = useCommandFx()
   const reducedMotion = useReducedMotion()
   const [lifecycle, dispatch] = useReducer(lifecycleReducer, IDLE)
@@ -110,7 +110,7 @@ export function AssistantProvider({ children }) {
     [schedule],
   )
 
-  const assistant = useAssistant({ onSend, onResponse, onError })
+  const assistant = useAssistant({ onSend, onResponse, onError, connected })
   const setTyping = useCallback((typing) => dispatch({ type: typing ? 'focus' : 'blur' }), [])
 
   const value = useMemo(

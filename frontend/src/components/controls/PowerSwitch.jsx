@@ -1,4 +1,4 @@
-export function PowerSwitch({ label = 'Power', isOn, disabled, onToggle }) {
+export function PowerSwitch({ label = 'Power', accessibleLabel, isOn, disabled, onToggle }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm text-slate-600 dark:text-slate-300">{label}</span>
@@ -8,7 +8,7 @@ export function PowerSwitch({ label = 'Power', isOn, disabled, onToggle }) {
           type="button"
           role="switch"
           aria-checked={isOn}
-          aria-label={label}
+          aria-label={accessibleLabel ?? label}
           disabled={disabled}
           onClick={() => onToggle(!isOn)}
           className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 ${

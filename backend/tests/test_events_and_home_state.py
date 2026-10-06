@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import SendCommand
@@ -19,10 +20,24 @@ def test_successful_command_is_logged_as_event(client: TestClient, send_command:
     assert event["source"] == "frontend"
 
 
-def test_event_records_explicit_source(client: TestClient, send_command: SendCommand) -> None:
-    send_command("door_main", "unlock", source="ai_agent")
+@pytest.mark.parametrize("source", ["ai_agent", "gesture", "automation", "mqtt", "ml"])
+def test_direct_commands_cannot_claim_another_source(
+    client: TestClient, send_command: SendCommand, source: str
+) -> None:
+    # Regression: the device endpoint used to accept any source, so a client could unlock
+    # the door and have the event log say the AI agent (or a gesture) did it.
+    response = send_command("door_main", "unlock", source=source)
 
-    assert client.get("/api/v1/events").json()[0]["source"] == "ai_agent"
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert client.get("/api/v1/devices/door_main").json()["state"]["is_locked"] is True
+    assert client.get("/api/v1/events").json() == []
+
+
+def test_direct_commands_are_recorded_as_frontend(client: TestClient, send_command: SendCommand) -> None:
+    send_command("door_main", "unlock", source="frontend")
+
+    assert client.get("/api/v1/events").json()[0]["source"] == "frontend"
 
 
 def test_failed_commands_are_not_logged(client: TestClient, send_command: SendCommand) -> None:

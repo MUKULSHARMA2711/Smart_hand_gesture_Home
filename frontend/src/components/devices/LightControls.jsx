@@ -10,7 +10,7 @@ export function LightControls({ device, busy, onCommand }) {
   return (
     <div className="space-y-4">
       <StateSummary primary={isOn ? 'On' : 'Off'} secondary={isOn ? `${brightness}% brightness` : null} active={isOn} />
-      <PowerSwitch isOn={isOn} disabled={busy} onToggle={(next) => onCommand(next ? 'turn_on' : 'turn_off')} />
+      <PowerSwitch accessibleLabel={`${device.name} power`} isOn={isOn} disabled={busy} onToggle={(next) => onCommand(next ? 'turn_on' : 'turn_off')} />
       <RangeControl
         label="Brightness"
         unit="%"

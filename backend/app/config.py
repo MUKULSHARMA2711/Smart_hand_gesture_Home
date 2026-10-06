@@ -69,7 +69,8 @@ class Settings(BaseSettings):
     )
     ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     ai_max_tool_rounds: int = Field(default=4, ge=0, le=10)
-    ai_timeout_s: float = Field(default=60.0, gt=0)
+    ai_timeout_s: float = Field(default=60.0, gt=0)  # per provider HTTP call
+    ai_request_timeout_s: float = Field(default=120.0, gt=0)  # whole plan, including tool rounds
     # Explicit "unlock the front door" requests are allowed for the AI agent; set False to forbid.
     ai_allow_unlock: bool = True
     ai_history_max_size: int = Field(default=100, ge=1)

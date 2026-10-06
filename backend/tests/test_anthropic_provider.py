@@ -115,3 +115,40 @@ async def test_tool_loop_is_bounded() -> None:
 
     with pytest.raises(AIProviderError, match="rounds"):
         await AnthropicProvider(model="claude-opus-5-5", client=client, max_tool_rounds=2).plan(make_request())
+
+
+class FailingClient:
+    """A client whose request fails the way the real SDK does."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs):
+        raise self._error
+
+
+def _sdk_errors() -> list[tuple[Exception, str]]:
+    import anthropic
+    import httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def status(cls, code: int) -> Exception:
+        return cls("error", response=httpx.Response(code, request=request), body=None)
+
+    return [
+        # Missing key: the SDK raises a bare TypeError at request time (regression: was a raw 500).
+        (TypeError('Could not resolve authentication method. Expected one of api_key, auth_token, or credentials'), "No AI API key"),
+        (status(anthropic.AuthenticationError, 401), "authentication failed"),  # invalid key
+        (status(anthropic.RateLimitError, 429), "rate limiting"),
+        (status(anthropic.InternalServerError, 529), r"error \(529\)"),  # provider overloaded
+        (anthropic.APIConnectionError(request=request), "Could not reach"),  # provider unavailable
+        (anthropic.APITimeoutError(request=request), "timed out"),
+    ]
+
+
+@pytest.mark.parametrize(("error", "message"), _sdk_errors())
+async def test_sdk_failures_become_provider_errors(error: Exception, message: str) -> None:
+    with pytest.raises(AIProviderError, match=message):
+        await provider(FailingClient(error)).plan(make_request())

@@ -49,3 +49,19 @@ export function askAI(send, question) {
   window.location.hash = '#/assistant'
   send(question)
 }
+
+const FEATURE_LABELS = {
+  hour: 'time of day',
+  day_of_week: 'day of week',
+  temperature_c: 'temperature',
+  humidity_pct: 'humidity',
+  occupied: 'occupancy',
+  occupant_count: 'people home',
+  ambient_light_lux: 'ambient light',
+  fan_on: 'fan state',
+  fan_recently_on: 'recent fan use',
+}
+
+export function featureLabel(feature) {
+  return FEATURE_LABELS[feature] ?? feature
+}

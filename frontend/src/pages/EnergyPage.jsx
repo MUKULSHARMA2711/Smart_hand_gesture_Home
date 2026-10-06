@@ -63,7 +63,7 @@ export function EnergyPage() {
           <Panel title="Power by device · now">
             <DevicePowerBars devices={home.devices} total={total} />
           </Panel>
-          <AnomalyPanel report={ml.anomalies} onAskAI={() => askAI(send, 'Is there abnormal energy usage?')} />
+          <AnomalyPanel report={ml.anomalies} error={ml.error} onAskAI={() => askAI(send, 'Is there abnormal energy usage?')} />
         </div>
       </div>
 

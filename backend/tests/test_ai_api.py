@@ -203,10 +203,12 @@ def test_unavailable_provider_reports_error_and_device_control_still_works() -> 
 
     app = create_app(Settings(_env_file=None), ai_provider=UnavailableAIProvider("anthropic", "claude-opus-5-5", "no key"))
     with TestClient(app) as client:
-        body = ask(client, "turn on the light")
+        response = client.post("/api/v1/ai/command", json={"message": "turn on the light"})
 
-        assert body["plan_valid"] is False
-        assert body["errors"] == ["no key"]
+        assert response.status_code == 503
+        error = response.json()["error"]
+        assert (error["code"], error["message"]) == ("ai_unavailable", "AI service is currently unavailable.")
+        assert error["details"]["reason"] == "no key"
         assert client.get("/api/v1/events").json() == []
         assert client.post("/api/v1/devices/light_living_room/command", json={"action": "turn_on"}).status_code == 200
 
@@ -228,3 +230,29 @@ def test_explicit_unlock_still_works(client: TestClient) -> None:
 
     assert [(a["intent"], a["status"]) for a in body["actions"]] == [("UNLOCK_DOOR", "executed")]
     assert states(client)[DOOR]["is_locked"] is False
+
+
+@pytest.mark.parametrize(
+    ("message", "reply"),
+    [
+        ("don't unlock the door", "Understood, I won't unlock the Main Door. It stays locked."),
+        ("never lock the front door", "Understood, I won't lock the Main Door."),
+    ],
+)
+def test_mock_planner_does_not_propose_negated_door_actions(client: TestClient, message: str, reply: str) -> None:
+    # Regression: the planner replied "I'll unlock it" (the policy then rejected the action),
+    # so the user saw a reply that contradicted their request.
+    body = ask(client, message)
+
+    assert body["reply"].startswith(reply)
+    assert body["actions"] == []
+    assert client.get("/api/v1/events").json() == []
+
+
+def test_negated_door_clause_does_not_swallow_the_rest_of_the_request(client: TestClient) -> None:
+    body = ask(client, "turn on the light but don't unlock the door")
+
+    assert [(a["device_id"], a["intent"], a["status"]) for a in body["actions"]] == [
+        ("light_living_room", "TURN_ON", "executed")
+    ]
+    assert states(client)[DOOR]["is_locked"] is True

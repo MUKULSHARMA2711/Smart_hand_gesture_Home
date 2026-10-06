@@ -18,16 +18,20 @@ export function ActivityPage() {
   const { events: polledEvents, deviceNames } = useHomeData()
   const [history, setHistory] = useState({ deviceEvents: [], gestureEvents: [], aiInteractions: [] })
   const [filter, setFilter] = useState('all')
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     Promise.allSettled([api.getEvents(100), api.getGestureEvents(100), api.getAIHistory(50)]).then(([d, g, a]) => {
       if (cancelled) return
-      setHistory({
-        deviceEvents: d.status === 'fulfilled' ? d.value : [],
-        gestureEvents: g.status === 'fulfilled' ? g.value : [],
-        aiInteractions: a.status === 'fulfilled' ? a.value : [],
-      })
+      // Keep the last good history if a refresh fails, and say so instead of showing "no activity".
+      const failed = [d, g, a].find((result) => result.status === 'rejected')
+      setLoadError(failed ? failed.reason.message : null)
+      setHistory((previous) => ({
+        deviceEvents: d.status === 'fulfilled' ? d.value : previous.deviceEvents,
+        gestureEvents: g.status === 'fulfilled' ? g.value : previous.gestureEvents,
+        aiInteractions: a.status === 'fulfilled' ? a.value : previous.aiInteractions,
+      }))
     })
     return () => {
       cancelled = true
@@ -57,7 +61,17 @@ export function ActivityPage() {
           </button>
         ))}
       </div>
-      <EventConsole entries={visible} limit={100} title="Activity stream" emptyText="No activity of this kind yet." />
+      {loadError && (
+        <p role="alert" className="rounded-xl border border-amber-900 bg-amber-950/60 p-3 text-sm text-amber-200">
+          Could not load the full activity history ({loadError}). Showing what was last loaded.
+        </p>
+      )}
+      <EventConsole
+        entries={visible}
+        limit={100}
+        title="Activity stream"
+        emptyText={filter === 'all' ? 'No activity yet.' : 'No activity of this kind yet.'}
+      />
       <EventLog events={history.deviceEvents.slice(0, 30)} deviceNames={deviceNames} />
     </div>
   )

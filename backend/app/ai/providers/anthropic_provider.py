@@ -106,10 +106,19 @@ class AnthropicProvider(AIProvider):
             raise AIProviderError("The AI provider is rate limiting requests. Try again shortly.") from exc
         except sdk.APIStatusError as exc:
             raise AIProviderError(f"The AI provider returned an error ({exc.status_code}).") from exc
+        except sdk.APITimeoutError as exc:
+            raise AIProviderError("The AI provider timed out.") from exc
         except sdk.APIConnectionError as exc:
             raise AIProviderError("Could not reach the AI provider.") from exc
         except sdk.AnthropicError as exc:  # e.g. no credentials configured
             raise AIProviderError(f"The AI provider is not configured correctly: {exc}") from exc
+        except TypeError as exc:
+            # With no API key or profile the SDK raises a bare TypeError at request time.
+            if "authentication" in str(exc).lower():
+                raise AIProviderError(
+                    "No AI API key is configured. Set SMARTHOME_AI_API_KEY or ANTHROPIC_API_KEY."
+                ) from exc
+            raise
 
     @staticmethod
     def _run_tools(request: PlanningRequest, content: list[Any]) -> list[dict[str, Any]]:

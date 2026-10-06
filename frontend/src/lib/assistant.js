@@ -45,3 +45,24 @@ export function changedDeviceStates(response) {
   }
   return (response.changed_devices ?? []).map((id) => ({ id, state: latest[id] }))
 }
+
+/**
+ * What to show when an assistant request failed before producing a plan. AI outages are
+ * reported as such, with a reminder that the rest of the home keeps working.
+ */
+export function describeAssistantError(turn) {
+  switch (turn.errorCode) {
+    case 'ai_unavailable':
+      return {
+        title: 'AI service is currently unavailable.',
+        hint: 'Nothing was changed. Device controls, gestures and the dashboard still work.',
+        reason: turn.errorReason ?? null,
+      }
+    case 'network_error':
+      return { title: 'Cannot reach the IntelliHome backend.', hint: 'Nothing was changed.', reason: null }
+    case 'timeout':
+      return { title: 'The assistant did not answer in time.', hint: turn.transportError, reason: null }
+    default:
+      return { title: `Request failed: ${turn.transportError}`, hint: null, reason: null }
+  }
+}

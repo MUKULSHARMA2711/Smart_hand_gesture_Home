@@ -21,6 +21,9 @@ business logic or the (future) AI layer.
 * **Phase 5:** **machine learning**: Random Forest fan-usage prediction and Isolation Forest
   energy anomaly detection, explained by the AI agent and shown in the 3D UI. See
   [Machine Learning Intelligence](#machine-learning-intelligence).
+* **Day 6:** **hardening**: one error format everywhere, failure isolation between the AI,
+  ML, sensors and device control, and a tested failure matrix. See
+  [Reliability and Failure Handling](#reliability-and-failure-handling).
 
 ```
 smart-ai-home/
@@ -218,7 +221,7 @@ curl -X POST http://localhost:8000/api/v1/devices/light_living_room/command \
 curl -X POST http://localhost:8000/api/v1/devices/ac_bedroom/command \
      -H "Content-Type: application/json" -d '{"action": "set_temperature", "value": 22}'
 
-# Unlock the door (source is optional, defaults to "frontend")
+# Unlock the door (source is optional; this endpoint only accepts "frontend")
 curl -X POST http://localhost:8000/api/v1/devices/door_main/command \
      -H "Content-Type: application/json" -d '{"action": "unlock", "source": "frontend"}'
 
@@ -251,7 +254,7 @@ Errors always use the same envelope:
 | Unknown device | 404 | `device_not_found` |
 | Action not supported by the device (e.g. `turn_on` on the door) | 400 | `unsupported_command` |
 | Invalid value (brightness 150, AC 35 °C, missing value…) | 422 | `invalid_command` |
-| Malformed body (missing `action`, unknown field, bad `source`) | 422 | `invalid_request` |
+| Malformed body (missing `action`, unknown field, `source` other than `frontend`) | 422 | `invalid_request` |
 
 ```json
 {
@@ -265,7 +268,10 @@ Errors always use the same envelope:
 ```
 
 Only successful commands produce events. Event `source` is one of `frontend`,
-`automation`, `gesture`, `ai_agent` or `mqtt`.
+`automation`, `gesture`, `ai_agent`, `mqtt` or `ml` (observations only). The direct device
+endpoint always records `frontend`: gesture and AI commands must go through
+`/gestures/commands` and `/ai/command`, so a client cannot bypass their checks or forge the
+audit trail.
 
 ---
 
@@ -896,6 +902,52 @@ curl -s -X POST localhost:8000/api/v1/ml/anomalies/check -H "Content-Type: appli
   red markers on the power chart, a reading tester, and a model card with all metrics.
 * **Assistant**: the prediction card and ML suggestion chips.
 * **Activity**: an "ML anomalies" filter.
+
+---
+
+## Reliability and Failure Handling
+
+The backend is the single source of truth, and each optional subsystem (AI provider, ML,
+sensors, camera, WebGL) can fail without taking device control down with it.
+
+**One error format.** Every failure, including unknown routes, wrong methods, malformed
+JSON and unexpected exceptions, returns
+`{"error": {"code": "...", "message": "...", "details": ...}}`. Unexpected errors return
+`500 internal_error` without internal details; the traceback is only logged.
+
+| Failure | What the user sees | What keeps working |
+|---|---|---|
+| Backend unavailable | Header shows **Offline**; banner "Connection to the backend lost", labelled as the last known state; failed commands show an error toast | The UI keeps polling (never overlapping) and recovers by itself when the backend returns. Requests time out after 15 s instead of hanging |
+| AI provider unavailable (no or invalid key, outage, rate limit, timeout, bad output) | `503 ai_unavailable`: "AI service is currently unavailable." Nothing is executed; the attempt is kept in AI history | Dashboard, direct control, gestures, events, ML. The whole plan is capped at `SMARTHOME_AI_REQUEST_TIMEOUT_S` (120 s) |
+| Camera unavailable or denied, MediaPipe fails to load or crashes | Clear message in the camera panel ("Camera permission was denied", "No camera was found", "Could not load the hand-tracking model") and a Try again button | Everything else. The camera stream, frame loop and MediaPipe work are released on every exit path, including leaving the page |
+| WebGL unavailable or context lost | The 2D floor plan, with the same live state, selection and anomaly rings | All controls |
+| ML unavailable (training failed, disabled, model error) | `503 ml_unavailable`; cards show "No prediction available" / "Anomaly detection unavailable" | The AI agent still handles normal commands (without ML context); dashboard, gestures and control are unaffected |
+| Invalid or missing sensor data | `environment: null` plus `sensor_error`; the UI shows "Sensors unavailable" and never estimates values | Predictions still run but are marked `reliable: false` ("Low confidence"), and the AI says sensors are unavailable instead of quoting numbers |
+
+**Sensor validation.** Readings must be physically plausible (temperature −40 to 85 °C,
+humidity 0–100 %, light 0–200 000 lux, finite numbers, occupancy consistent with the
+occupant count). Anything else is treated as a sensor fault, not as data. ML feature
+overrides (`POST /ml/predict`) use the same bounds and return `422 invalid_features`.
+
+**Gesture confidence.** Frames below the threshold (default 0.75,
+`SMARTHOME_GESTURE_CONFIDENCE_THRESHOLD`) are shown as "Gesture ignored — confidence too
+low" and never sent. A gesture must also be held for 0.6 s and released before it can fire
+again. The backend re-checks the threshold (`422 confidence_below_threshold`).
+
+**AI validation and policy.** LLM output → strict Pydantic plan → per-action capability and
+range checks → door policy (explicit, non-negated "lock"/"unlock" only) → `CommandService`.
+Malicious or partial plans are handled per action: invalid actions are rejected and never
+executed, and an unexpected failure in one action is reported as `failed` without hiding
+the others. Repeated or concurrent requests are serialised per device, so every event's
+`previous_state` is the previous event's `new_state`.
+
+**Backend as source of truth.** All device changes go through `CommandService`. The UI
+shows a new device state only after the backend confirms it, and the 3D scene renders backend
+state (AI beams briefly show the backend's own `previous_state` → `new_state`). A failed or
+rejected command never mutates state and never creates a success event.
+
+Regression tests: `backend/tests/test_reliability.py` and the frontend's
+`cameraSession`, `polling`, `client` and `unavailableStates` tests.
 
 ---
 

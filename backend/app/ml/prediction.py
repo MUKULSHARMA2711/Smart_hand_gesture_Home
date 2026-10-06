@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precisio
 from sklearn.model_selection import train_test_split
 
 from app.ml.dataset import Dataset
-from app.ml.features import FAN_DEVICE_ID, FEATURE_LABELS
+from app.ml.features import FAN_DEVICE_ID, FEATURE_LABELS, SENSOR_FEATURES
 from app.ml.models import ClassificationMetrics, FeatureFactor, Prediction, PredictorInfo
 
 MODEL_NAME = "random_forest_v1"
@@ -145,6 +145,12 @@ class FanUsagePredictor:
             f"Random Forest predicted a {percent}% probability that the {device_name} will be needed within "
             f"{self._horizon} minutes. Main factors: {reasons}."
         )
+        missing_sensors = [name for name in SENSOR_FEATURES if name in missing]
+        if missing_sensors:
+            labels = ", ".join(FEATURE_LABELS.get(name, name).lower() for name in missing_sensors)
+            explanation += (
+                f" Low confidence: sensor data was unavailable ({labels}), so typical values were used instead."
+            )
         return Prediction(
             device_id=FAN_DEVICE_ID,
             device_name=device_name,
@@ -155,6 +161,7 @@ class FanUsagePredictor:
             horizon_minutes=self._horizon,
             features={name: (None if name in missing else round(float(row[i]), 3)) for i, name in enumerate(self._feature_names)},
             missing_features=missing,
+            reliable=not missing_sensors,
             factors=factors,
             reason_features={f.feature: f.value for f in top},
             explanation=explanation,

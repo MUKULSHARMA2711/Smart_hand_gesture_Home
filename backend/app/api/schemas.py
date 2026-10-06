@@ -30,9 +30,17 @@ class CommandRequest(BaseModel):
 
     @field_validator("source")
     @classmethod
-    def ml_never_commands(cls, value: CommandSource) -> CommandSource:
+    def only_direct_control(cls, value: CommandSource) -> CommandSource:
+        # The event log must say who really acted. Gesture and AI commands have their own
+        # endpoints, where confidence gates, capability checks and the door policy apply;
+        # accepting their source here would let a client bypass those and forge the audit trail.
         if value is CommandSource.ML:
             raise ValueError("The ML layer only recommends and detects; it cannot issue device commands.")
+        if value is not CommandSource.FRONTEND:
+            raise ValueError(
+                f"Direct device commands are recorded as 'frontend'. Use /gestures/commands or /ai/command "
+                f"for '{value}' commands so their validation and security policy apply."
+            )
         return value
 
     def to_command(self) -> DeviceCommand:

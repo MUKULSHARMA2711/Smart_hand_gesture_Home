@@ -14,6 +14,7 @@ from app.ai.context import DeviceContext, HomeContext
 from app.ai.providers.base import AIProvider, PlanningRequest
 from app.devices.types import Capability, DeviceType
 from app.domain.intents import INTENT_CAPABILITIES, Intent
+from app.domain.policy import explicitly_requests
 
 _TYPE_WORDS: dict[DeviceType, tuple[str, ...]] = {
     DeviceType.LIGHT: ("light", "lights", "lamp", "lamps"),
@@ -32,7 +33,7 @@ _VALUE_KEYWORDS = (
     (re.compile(r"\b(temperature|degrees?|celsius)\b|°"), DeviceType.AC),
 )
 
-_CLAUSE_SPLIT = re.compile(r"\s*(?:[,;.!]|\bthen\b|\band\b|\balso\b)\s*")
+_CLAUSE_SPLIT = re.compile(r"\s*(?:[,;.!]|\bthen\b|\band\b|\balso\b|\bbut\b)\s*")
 _ALL = re.compile(r"\b(everything|every device|all devices|all the devices|all appliances|all)\b")
 _CONTROL = re.compile(
     r"\b(turn|switch|power on|power off|shut|set|dim|brighten|lock|unlock|start|stop|adjust|increase|decrease|raise|lower)\b"
@@ -42,6 +43,7 @@ _ENERGY = re.compile(r"\b(energy|power|electricity|consum\w*|usage|watts?|kwh|bi
 _HISTORY = re.compile(r"\b(history|recent(ly)?|happened|events?|activity|log)\b")
 _STATUS = re.compile(r"\b(status|happening|state|overview|summary|how is|how's|what's on|is the|are the|which)\b|\?")
 _UNLOCK = re.compile(r"\bunlock")
+_DECLINED_UNLOCK, _DECLINED_LOCK = "DECLINED_UNLOCK", "DECLINED_LOCK"  # negated door requests
 _LOCK = re.compile(r"\block")
 _OFF = re.compile(r"\b(off|shut|stop)\b")
 _ON = re.compile(r"\b(on|start)\b")
@@ -122,6 +124,8 @@ class _Planner:
         if not actions:
             if leaving:
                 return {"message": " ".join(["Everything is already off.", *notes]).strip(), "actions": []}
+            if notes:
+                return {"message": " ".join(notes), "actions": []}
             return {"message": _HELP, "actions": []}
 
         return {"message": " ".join([self._describe(actions, leaving), *notes]).strip(), "actions": actions}
@@ -212,12 +216,19 @@ class _Planner:
 
     def _status_summary(self) -> str:
         env = self.context.environment
-        people = env.occupancy.occupant_count
-        occupancy = f"{people} {'person is' if people == 1 else 'people are'} home" if people else "nobody is home"
         devices = _join([f"the {d.name} is {describe_state(d)}" for d in self.devices])
+        if env is None:
+            # Never invent sensor values: say they are unavailable.
+            conditions = "Sensor readings are unavailable right now, so I can't report temperature or occupancy."
+        else:
+            people = env.occupancy.occupant_count
+            occupancy = f"{people} {'person is' if people == 1 else 'people are'} home" if people else "nobody is home"
+            conditions = (
+                f"Here's your home right now: {env.temperature_c} °C with {env.humidity_pct}% humidity, {occupancy}, "
+                f"and ambient light is {env.ambient_light_lux:.0f} lux."
+            )
         return (
-            f"Here's your home right now: {env.temperature_c} °C with {env.humidity_pct}% humidity, {occupancy}, "
-            f"and ambient light is {env.ambient_light_lux:.0f} lux. {devices[0].upper()}{devices[1:]}. "
+            f"{conditions} {devices[0].upper()}{devices[1:]}. "
             f"Total power draw is {_format_power(self.context.energy.total_power_w)}."
         )
 
@@ -272,6 +283,12 @@ class _Planner:
                 intent = last_intent  # "turn on the light and [the] fan"
             if intent is None:
                 continue
+            if intent in (_DECLINED_UNLOCK, _DECLINED_LOCK):
+                doors = [d for d in explicit or self.devices if d.type is DeviceType.DOOR_LOCK]
+                verb = "unlock" if intent == _DECLINED_UNLOCK else "lock"
+                notes.extend(f"Understood, I won't {verb} the {d.name}. It stays {describe_state(d)}." for d in doors)
+                last_targets, last_intent = explicit or last_targets, None
+                continue
 
             if intent == "SET":
                 targets = explicit or broad or last_targets or self._keyword_targets(clause)
@@ -302,10 +319,11 @@ class _Planner:
         return actions
 
     def _clause_intent(self, clause: str) -> tuple[Intent | str | None, int | None]:
+        # Same negation rule as the security policy: "don't unlock the door" is not a request.
         if _UNLOCK.search(clause):
-            return Intent.UNLOCK_DOOR, None
+            return (Intent.UNLOCK_DOOR if explicitly_requests(clause, Capability.UNLOCK) else _DECLINED_UNLOCK), None
         if _LOCK.search(clause):
-            return Intent.LOCK_DOOR, None
+            return (Intent.LOCK_DOOR if explicitly_requests(clause, Capability.LOCK) else _DECLINED_LOCK), None
         number = _NUMBER.search(clause)
         if number and (_SETTING.search(clause) or any(p.search(clause) for p, _ in _VALUE_KEYWORDS)):
             return "SET", int(number.group())

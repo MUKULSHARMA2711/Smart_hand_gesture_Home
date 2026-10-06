@@ -59,20 +59,18 @@ export function HouseView({ selectedId, onSelect, compact = false, showGestureIn
   const labelLayer = useRef(null)
   const inView = useInView(container)
   const [webgl] = useState(hasWebGL)
+  const [contextLost, setContextLost] = useState(false)
 
-  const fallback = (
-    <FloorPlan2D
-      devices={devices}
-      selectedId={selectedId}
-      onSelect={onSelect}
-      alerts={alerts}
-      reason={webgl ? '3D view failed to start; showing the 2D plan.' : 'WebGL is not available in this browser; showing the 2D plan.'}
-    />
-  )
+  const reason = !webgl
+    ? 'WebGL is not available in this browser; showing the 2D plan.'
+    : contextLost
+      ? 'The 3D view lost its graphics context; showing the 2D plan. Reopen the page to retry 3D.'
+      : '3D view failed to start; showing the 2D plan.'
+  const fallback = <FloorPlan2D devices={devices} selectedId={selectedId} onSelect={onSelect} alerts={alerts} reason={reason} />
 
   return (
     <div ref={container} className="relative h-full w-full">
-      {!webgl ? (
+      {!webgl || contextLost ? (
         fallback
       ) : (
         <SceneErrorBoundary fallback={fallback}>
@@ -90,6 +88,7 @@ export function HouseView({ selectedId, onSelect, compact = false, showGestureIn
               labelLayer={labelLayer}
               alerts={alerts}
               predictions={predictions}
+              onContextLost={() => setContextLost(true)}
             />
           </Suspense>
         </SceneErrorBoundary>

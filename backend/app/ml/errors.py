@@ -21,5 +21,5 @@ class MLUnavailableError(DomainError):
 class InvalidFeatureError(DomainError):
     code = "invalid_features"
 
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+    def __init__(self, message: str, errors: list[dict] | None = None) -> None:
+        super().__init__(message, details={"errors": errors} if errors else None)

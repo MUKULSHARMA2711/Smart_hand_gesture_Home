@@ -15,11 +15,11 @@ import { useCommandFx } from '../state/CommandFxContext'
 import { useHomeData } from '../state/HomeDataContext'
 
 export function GesturePage() {
-  const { home, refresh, deviceNames } = useHomeData()
+  const { home, refresh, deviceNames, connected } = useHomeData()
   const { emit } = useCommandFx()
   const { setGestureActive, orbState } = useAssistantContext()
   const devices = home?.devices ?? []
-  const control = useGestureControl({ devices, onDevicesChanged: refresh })
+  const control = useGestureControl({ devices, onDevicesChanged: refresh, connected })
 
   const [cameraOn, setCameraOn] = useState(false)
   const [attempt, setAttempt] = useState(0)

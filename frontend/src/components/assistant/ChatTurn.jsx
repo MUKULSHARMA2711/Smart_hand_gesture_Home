@@ -1,4 +1,4 @@
-import { changedDeviceStates, describeAction, STATUS_STYLES } from '../../lib/assistant'
+import { changedDeviceStates, describeAction, describeAssistantError, STATUS_STYLES } from '../../lib/assistant'
 import { summarizeDeviceState } from '../../lib/format'
 
 function ActionList({ actions, deviceNames }) {
@@ -43,12 +43,22 @@ function AssistantBubble({ turn, devicesById, deviceNames }) {
   if (turn.pending) {
     return (
       <p className="text-sm text-slate-500 dark:text-slate-400" aria-live="polite">
-        Planning<span className="animate-pulse">…</span>
+        IntelliHome is thinking<span className="animate-pulse">…</span>
       </p>
     )
   }
   if (turn.transportError) {
-    return <p className="text-sm text-red-700 dark:text-red-400">Request failed: {turn.transportError}</p>
+    const error = describeAssistantError(turn)
+    return (
+      <div role="alert" className="text-sm">
+        <p className="font-medium text-red-700 dark:text-red-400">
+          <span aria-hidden="true">⚠ </span>
+          {error.title}
+        </p>
+        {error.hint && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{error.hint}</p>}
+        {error.reason && <p className="mt-1 font-mono text-[11px] text-slate-500">{error.reason}</p>}
+      </div>
+    )
   }
   return (
     <>

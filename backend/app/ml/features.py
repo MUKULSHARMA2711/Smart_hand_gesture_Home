@@ -7,8 +7,11 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import math
+
 from app.domain.home_state import HomeStateSnapshot
 from app.events.models import DeviceEvent
+from app.sensors.base import MAX_AMBIENT_LIGHT_LUX, MAX_OCCUPANTS, TEMPERATURE_RANGE_C
 
 FAN_DEVICE_ID = "fan_living_room"
 RECENT_WINDOW = timedelta(minutes=30)
@@ -38,6 +41,43 @@ FEATURE_LABELS = {
 }
 
 POWER_FEATURES: tuple[str, ...] = ("setting_level", "power_w")
+
+# Inputs that come from environmental sensors. If any is missing the prediction is still
+# made (imputed with typical values) but flagged as unreliable.
+SENSOR_FEATURES: tuple[str, ...] = ("temperature_c", "humidity_pct", "occupied", "occupant_count", "ambient_light_lux")
+
+# Plausible range of every fan-model input; the same bounds the sensor layer enforces.
+FEATURE_BOUNDS: dict[str, tuple[float, float]] = {
+    "hour": (0.0, 24.0),
+    "day_of_week": (0.0, 6.0),
+    "temperature_c": TEMPERATURE_RANGE_C,
+    "humidity_pct": (0.0, 100.0),
+    "occupied": (0.0, 1.0),
+    "occupant_count": (0.0, float(MAX_OCCUPANTS)),
+    "ambient_light_lux": (0.0, MAX_AMBIENT_LIGHT_LUX),
+    "fan_on": (0.0, 1.0),
+    "fan_recently_on": (0.0, 1.0),
+}
+_BINARY_FEATURES = frozenset({"occupied", "fan_on", "fan_recently_on"})
+
+
+def feature_errors(features: Mapping[str, float | None]) -> list[dict[str, Any]]:
+    """Problems with caller-supplied features: unknown names, non-finite or implausible values."""
+    errors: list[dict[str, Any]] = []
+    for name, value in features.items():
+        if name not in FEATURE_BOUNDS:
+            errors.append({"feature": name, "message": f"Unknown feature. Expected one of: {', '.join(FAN_FEATURES)}."})
+            continue
+        if value is None:
+            continue  # explicitly missing: imputed and reported
+        low, high = FEATURE_BOUNDS[name]
+        if not math.isfinite(value):
+            errors.append({"feature": name, "message": "Must be a finite number."})
+        elif not low <= value <= high:
+            errors.append({"feature": name, "message": f"{value:g} is outside the plausible range {low:g} to {high:g}."})
+        elif name in _BINARY_FEATURES and value not in (0, 1):
+            errors.append({"feature": name, "message": "Must be 0 or 1."})
+    return errors
 
 
 def fan_features(

@@ -28,11 +28,12 @@ export function AnomalyCard({ result }) {
 }
 
 /** Live device checks plus recent anomalous readings, straight from GET /ml/anomalies. */
-export function AnomalyPanel({ report, onAskAI }) {
+export function AnomalyPanel({ report, onAskAI, error = null }) {
   if (!report) {
     return (
       <Panel title="Anomaly detection">
         <p className="text-sm text-slate-400">Anomaly detection unavailable.</p>
+        {error && <p className="mt-1 text-xs text-slate-500">{error}</p>}
       </Panel>
     )
   }
@@ -51,7 +52,7 @@ export function AnomalyPanel({ report, onAskAI }) {
         </div>
       ) : (
         <p className="text-sm text-emerald-300">
-          <span aria-hidden="true">✓ </span>No anomalies: every device is within its learned normal range.
+          <span aria-hidden="true">✓ </span>No anomalies detected: every device is within its learned normal range.
         </p>
       )}
       <table className="mt-4 w-full text-left text-xs">

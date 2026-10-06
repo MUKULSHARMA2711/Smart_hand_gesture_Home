@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import { startPolling } from '../state/polling'
 
 const POLL_INTERVAL_MS = 5000
 const EVENT_LIMIT = 15
@@ -30,11 +31,8 @@ export function useHomeDashboard() {
     }
   }, [])
 
-  useEffect(() => {
-    refresh()
-    const timer = setInterval(refresh, POLL_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [refresh])
+  // Polls never overlap, and stop when the provider unmounts.
+  useEffect(() => startPolling(refresh, POLL_INTERVAL_MS), [refresh])
 
   const sendCommand = useCallback(
     async (deviceId, action, value) => {
@@ -55,5 +53,8 @@ export function useHomeDashboard() {
 
   const clearCommandError = useCallback(() => setCommandError(null), [])
 
-  return { home, events, connectionError, commandError, clearCommandError, pendingDeviceId, sendCommand, refresh }
+  // Connected = the latest refresh succeeded. While disconnected, `home` is the last known state.
+  const connected = Boolean(home) && !connectionError
+
+  return { home, events, connected, connectionError, commandError, clearCommandError, pendingDeviceId, sendCommand, refresh }
 }

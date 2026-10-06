@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { describeAction } from '../../lib/assistant'
+import { describeAction, describeAssistantError } from '../../lib/assistant'
 
 /**
  * The request lifecycle for the latest assistant turn. Stage *content* comes only from
@@ -36,7 +36,7 @@ function contextSummary(home) {
     `${home.devices.length} devices`,
     on.length ? `${on.join(', ')} on` : 'all appliances off',
     door ? `${door.name} ${door.state.is_locked ? 'locked' : 'unlocked'}` : null,
-    `${home.environment.temperature_c.toFixed(1)} °C`,
+    home.environment ? `${home.environment.temperature_c.toFixed(1)} °C` : 'sensors unavailable',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -49,7 +49,7 @@ function StageBody({ stage, turn, contextAtSend, deviceNames, phase }) {
     case 'request':
       return <p className="text-slate-200">“{turn?.request}”</p>
     case 'understanding':
-      if (turn?.transportError) return <p className="text-red-300">{turn.transportError}</p>
+      if (turn?.transportError) return <p className="text-red-300">{describeAssistantError(turn).title}</p>
       return response ? <p className="text-slate-300">{response.reply}</p> : <p className="text-slate-500">Planner is working…</p>
     case 'context':
       return (

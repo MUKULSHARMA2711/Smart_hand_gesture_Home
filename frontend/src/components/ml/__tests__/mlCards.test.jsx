@@ -26,7 +26,7 @@ describe('PredictionCard', () => {
 
   it('handles an unlikely prediction and missing data', () => {
     expect(text(<PredictionCard prediction={{ ...prediction, prediction: 'OFF', probability: 0.12 }} />)).toContain('unlikely')
-    expect(text(<PredictionCard prediction={null} />)).toContain('Prediction unavailable')
+    expect(text(<PredictionCard prediction={null} />)).toContain('No prediction available.')
   })
 })
 

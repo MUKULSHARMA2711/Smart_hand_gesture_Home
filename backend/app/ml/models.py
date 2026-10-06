@@ -34,6 +34,8 @@ class Prediction(BaseModel):
     horizon_minutes: int
     features: dict[str, float | None]
     missing_features: list[str]
+    # False when sensor inputs were missing and imputed: the probability is then low-confidence.
+    reliable: bool = True
     factors: list[FeatureFactor]
     reason_features: dict[str, float | None]
     explanation: str
