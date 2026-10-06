@@ -45,6 +45,7 @@ async def execute_gesture(
         gesture_event=result.gesture_event,
         device_event=result.device_event,
         device=home.devices.get(request.target_device_id).snapshot(),
+        confirmation=result.confirmation,
     )
 
 

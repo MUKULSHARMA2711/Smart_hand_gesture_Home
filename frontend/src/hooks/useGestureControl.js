@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { createAdjustmentController } from '../gestures/adjustment'
+import { createDoorUnlockController } from '../gestures/doorUnlock'
 import { DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_GESTURE_INTENTS } from '../gestures/types'
 
 const HISTORY_LIMIT = 15
@@ -29,6 +30,7 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
   const [selectedId, setSelectedId] = useState(null)
   const [lastAction, setLastAction] = useState(null)
   const [adjustment, setAdjustment] = useState(null)
+  const [doorUnlock, setDoorUnlock] = useState(null)
 
   const selectedIdRef = useRef(selectedId)
   const devicesRef = useRef(devices)
@@ -75,8 +77,19 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
     }
   }, [connected, configLoaded, refreshEvents])
 
+  // Secure door unlock: the backend holds the request; a pinch confirms it via the existing API.
+  const unlock = useRef(null)
+  if (unlock.current === null) {
+    unlock.current = createDoorUnlockController({
+      decide: (confirmationId, decision) => api.decideConfirmation(confirmationId, decision),
+      onChange: setDoorUnlock,
+      onSettled: () => Promise.all([refreshEvents(), onDevicesChanged?.()]),
+    })
+  }
+
   const execute = useCallback(
     async ({ gesture, confidence }) => {
+      if (unlock.current.gesture(gesture)) return
       const intent = config.intents[gesture]
       if (!intent || intent === 'NONE' || inFlight.current) return
 
@@ -93,7 +106,13 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       setLastAction({ ...attempt, status: 'pending' })
       try {
         const response = await api.sendGesture({ gesture, intent, confidence, targetDeviceId: targetId })
-        setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
+        if (response.confirmation) {
+          // FOUR_FINGERS on the door: a pending request only. Nothing has been unlocked.
+          unlock.current.requested(response.confirmation, response.device.name)
+          setLastAction({ ...attempt, status: 'success', action: 'unlock requested · pinch to confirm' })
+        } else {
+          setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
+        }
       } catch (error) {
         setLastAction({ ...attempt, status: 'failure', action: null, message: error.message })
       } finally {
@@ -137,7 +156,34 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       },
     })
   }
-  const onPinch = useCallback((event) => adjuster.current.handle(event), [])
+  // A pending door unlock takes the pinch (confirm); otherwise it adjusts the fan / AC.
+  const onPinch = useCallback((event) => {
+    if (!unlock.current.pinch(event)) adjuster.current.handle(event)
+  }, [])
+  const cancelUnlock = useCallback((reason) => unlock.current.cancel(reason), [])
 
-  return { config, configError, events, selectedId, setSelectedId, lastAction, execute, adjustment, onPinch }
+  // Expiry display, and fail closed when the page is left.
+  useEffect(() => {
+    if (doorUnlock?.status !== 'pending') return undefined
+    const timer = setInterval(() => unlock.current.tick(), 1000)
+    return () => clearInterval(timer)
+  }, [doorUnlock?.status])
+  useEffect(() => () => unlock.current.cancel('Cancelled: left the gesture page.'), [])
+
+  return {
+    config,
+    configError,
+    events,
+    selectedId,
+    setSelectedId: (id) => {
+      if (id !== selectedIdRef.current) unlock.current.cancel('Cancelled: another device was selected.')
+      setSelectedId(id)
+    },
+    lastAction,
+    execute,
+    adjustment,
+    onPinch,
+    doorUnlock,
+    cancelUnlock,
+  }
 }

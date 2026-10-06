@@ -44,7 +44,8 @@ def test_existing_gesture_mapping_is_unchanged_and_adjust_is_not_for_the_ai() ->
         Gesture.OPEN_PALM: Intent.STOP,
         Gesture.ONE_FINGER: Intent.SELECT,
         Gesture.TWO_FINGERS: Intent.TOGGLE,
-        Gesture.PINCH: Intent.ADJUST,  # the only addition
+        Gesture.PINCH: Intent.ADJUST,  # added for fan/AC adjustment
+        Gesture.FOUR_FINGERS: Intent.UNLOCK_DOOR,  # added: requests a confirmed door unlock
         Gesture.NEUTRAL: Intent.NONE,
         Gesture.UNKNOWN: Intent.NONE,
     }

@@ -114,9 +114,11 @@ class AgentTools:
 
     # --- Executor-only tool ----------------------------------------------------------
 
-    async def control_device(self, device_id: str, command: DeviceCommand) -> DeviceEvent:
+    async def control_device(
+        self, device_id: str, command: DeviceCommand, source: CommandSource = CommandSource.AI_AGENT
+    ) -> DeviceEvent:
         """Execute an already-validated command. Never exposed to the LLM."""
-        return await self._commands.execute(device_id, command, CommandSource.AI_AGENT)
+        return await self._commands.execute(device_id, command, source)
 
     # --- LLM tool interface ----------------------------------------------------------
 

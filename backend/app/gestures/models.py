@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -20,6 +21,9 @@ class Gesture(StrEnum):
     # Thumb + index pinched, other fingers open: hold and move to adjust, release to apply.
     # Sent once, on release, with the final value.
     PINCH = "PINCH"
+    # Four fingers up, thumb folded: *requests* a door unlock. It never unlocks by itself;
+    # the request must be confirmed (pinch) through the existing confirmation API.
+    FOUR_FINGERS = "FOUR_FINGERS"
     NEUTRAL = "NEUTRAL"  # no hand in view
     UNKNOWN = "UNKNOWN"  # hand in view, no gesture recognised
 
@@ -33,6 +37,7 @@ GESTURE_INTENTS: Mapping[Gesture, Intent] = MappingProxyType(
         Gesture.ONE_FINGER: Intent.SELECT,
         Gesture.TWO_FINGERS: Intent.TOGGLE,
         Gesture.PINCH: Intent.ADJUST,  # fan → set_speed, AC → set_temperature; never a lock
+        Gesture.FOUR_FINGERS: Intent.UNLOCK_DOOR,  # held for confirmation, never executed directly
         Gesture.NEUTRAL: Intent.NONE,
         Gesture.UNKNOWN: Intent.NONE,
     }
@@ -57,6 +62,7 @@ class GestureOutcome(StrEnum):
     ACKNOWLEDGED = "acknowledged"  # valid targeting gesture (SELECT); no device command
     REJECTED = "rejected"  # refused before reaching the device (confidence, mismatch, policy...)
     FAILED = "failed"  # the device command itself failed
+    AWAITING_CONFIRMATION = "awaiting_confirmation"  # door unlock requested; nothing executed
 
 
 class GestureEvent(BaseModel):
@@ -86,3 +92,4 @@ class GestureEvent(BaseModel):
 class GestureCommandResult:
     gesture_event: GestureEvent
     device_event: DeviceEvent | None
+    confirmation: Any = None  # PendingConfirmation, for a requested door unlock

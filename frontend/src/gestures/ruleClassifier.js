@@ -22,6 +22,9 @@ const FINGERS = {
 
 // Below this score the hand is reported as UNKNOWN rather than a weak guess.
 const MIN_GESTURE_SCORE = 0.5
+// Four fingers up is an open palm with the thumb folded. Below this thumb extension the hand
+// is FOUR_FINGERS; at or above it, OPEN_PALM exactly as before (a spread thumb scores ~1).
+const THUMB_FOLDED = 0.4
 
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: (a.z ?? 0) - (b.z ?? 0) })
 const norm = (v) => Math.hypot(v.x, v.y, v.z)
@@ -104,6 +107,7 @@ export function scoreGestures(fingers, thumbUp) {
     ),
     [GESTURES.ONE_FINGER]: fuzzyAnd(fingers.index, curled('middle'), curled('ring'), curled('pinky')),
     [GESTURES.TWO_FINGERS]: fuzzyAnd(fingers.index, fingers.middle, curled('ring'), curled('pinky')),
+    [GESTURES.FOUR_FINGERS]: fuzzyAnd(fingers.index, fingers.middle, fingers.ring, fingers.pinky, curled('thumb')),
   }
 }
 
@@ -116,6 +120,9 @@ export function scoreGestures(fingers, thumbUp) {
 export function classifyHand({ landmarks, worldLandmarks, aspectRatio = 4 / 3 }) {
   const fingers = measureFingers(worldLandmarks)
   const scores = scoreGestures(fingers, thumbPointsUp(landmarks, aspectRatio))
+  // OPEN_PALM and FOUR_FINGERS share the four fingers; the thumb decides which one this is,
+  // so they never compete (which would lower both confidences).
+  delete scores[fingers.thumb < THUMB_FOLDED ? GESTURES.OPEN_PALM : GESTURES.FOUR_FINGERS]
   const [[bestGesture, best], [, runnerUp]] = Object.entries(scores).sort((a, b) => b[1] - a[1])
 
   if (best < MIN_GESTURE_SCORE) {

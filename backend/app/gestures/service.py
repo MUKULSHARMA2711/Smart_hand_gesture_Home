@@ -1,10 +1,11 @@
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from app.domain.command_service import CommandService
 from app.domain.errors import DomainError, IntentNotApplicableError
 from app.domain.home_state import HomeState
-from app.domain.intents import VALUE_INTENTS, Intent, IntentResolver
+from app.domain.intents import VALUE_INTENTS, Intent, IntentResolver, is_applicable
 from app.events.models import CommandSource
 from app.gestures.errors import (
     GestureActionBlockedError,
@@ -50,6 +51,12 @@ class GestureService:
         self._resolver = resolver or IntentResolver()
         self._confidence_threshold = confidence_threshold
         self._blocked_actions = frozenset(blocked_actions)
+        # Creates a pending unlock confirmation (HomeAgent.hold_gesture_unlock); None = disabled.
+        self._request_unlock: Callable[[str], Any] | None = None
+
+    def enable_unlock_confirmation(self, request_unlock: Callable[[str], Any]) -> None:
+        """Let FOUR_FINGERS *request* a door unlock, confirmed later via the confirmation API."""
+        self._request_unlock = request_unlock
 
     @property
     def confidence_threshold(self) -> float:
@@ -64,6 +71,8 @@ class GestureService:
         try:
             self._validate(command)
             device = self._home.devices.get(command.target_device_id)
+            if command.intent is Intent.UNLOCK_DOOR:
+                return self._request_door_unlock(command, device)
             device_command = self._resolver.resolve(command.intent, device, command.value)
 
             if device_command is None:  # targeting intent (SELECT): nothing to execute
@@ -84,6 +93,16 @@ class GestureService:
 
         event = self._record(command, action, GestureOutcome.EXECUTED, device_event_id=device_event.event_id)
         return GestureCommandResult(gesture_event=event, device_event=device_event)
+
+    def _request_door_unlock(self, command: GestureCommand, device: Any) -> GestureCommandResult:
+        """Never unlocks: creates a pending confirmation the user must confirm (pinch / API)."""
+        if not is_applicable(Intent.UNLOCK_DOOR, device):
+            raise IntentNotApplicableError(command.intent, device.id)  # fan, AC, light: unchanged
+        pending = self._request_unlock(device.id) if self._request_unlock is not None else None
+        if pending is None:  # gesture unlock disabled, or refused by the unlock policy
+            raise GestureActionBlockedError("unlock", device.id)
+        event = self._record(command, "unlock", GestureOutcome.AWAITING_CONFIRMATION, detail=pending.prompt)
+        return GestureCommandResult(gesture_event=event, device_event=None, confirmation=pending)
 
     def _validate(self, command: GestureCommand) -> None:
         expected_intent = GESTURE_INTENTS[command.gesture]

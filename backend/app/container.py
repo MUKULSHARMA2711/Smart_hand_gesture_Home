@@ -157,6 +157,8 @@ def build_container(
         timeout_s=settings.ai_request_timeout_s,
         confirmation_timeout_s=settings.ai_confirmation_timeout_s,
     )
+    if settings.gesture_door_unlock:
+        gesture_service.enable_unlock_confirmation(agent.hold_gesture_unlock)
 
     return Container(
         settings=settings,

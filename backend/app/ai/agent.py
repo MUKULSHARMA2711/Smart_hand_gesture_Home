@@ -27,7 +27,7 @@ from app.ai.tools import AgentTools, ToolSession
 from app.ai.validation import PlanValidator, ValidatedAction
 from app.domain.errors import DomainError
 from app.domain.intents import Intent
-from app.events.models import DeviceEvent
+from app.events.models import CommandSource, DeviceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,34 @@ class HomeAgent:
         logger.info("held %s on %s for confirmation until %s", pending.intent, pending.device_id, pending.expires_at)
         return pending
 
+    def hold_gesture_unlock(self, device_id: str) -> PendingConfirmation | None:
+        """A FOUR_FINGERS gesture asked to unlock: hold it exactly like an explicit AI request.
+
+        Same checks now (device, capability, unlock policy) and again on confirmation, same
+        single pending slot (it replaces any other pending request), same expiry. Returns None
+        if the policy refuses. Nothing is executed here.
+        """
+        name = self._tools.home.devices.get(device_id).name
+        raw_action = {"device_id": device_id, "intent": "UNLOCK_DOOR", "parameters": {}}
+        request = f"unlock the {name}"  # the deliberate four-finger gesture is the explicit request
+        item = self._validator.validate(0, raw_action, request)
+        if item.rejected or not item.requires_confirmation:
+            logger.info("gesture unlock of %s refused: %s", device_id, item.rejection_code or "no confirmation step")
+            return None
+        now = self._clock()
+        pending = PendingConfirmation(
+            device_id=device_id,
+            intent="UNLOCK_DOOR",
+            prompt=f"Unlock the {name}? Pinch to confirm, open palm to cancel.",
+            request=request,
+            source=CommandSource.GESTURE.value,
+            created_at=now,
+            expires_at=now + self._confirmation_timeout,
+        )
+        self._confirmations.hold(pending, raw_action)
+        logger.info("held gesture unlock of %s for confirmation until %s", device_id, pending.expires_at)
+        return pending
+
     async def _confirm(self, pending: PendingConfirmation, message: str) -> AgentResponse:
         raw_action = self._confirmations.raw_action
         self._confirmations.clear()  # one confirmation executes at most once
@@ -167,7 +195,7 @@ class HomeAgent:
         # only the confirmation step is satisfied. Execution is the normal CommandService path.
         item = self._validator.validate(0, raw_action, pending.request, confirmed=True)
         session = self._tools.session(self._tools.home_context())
-        result, event = await self._execute(item, session)
+        result, event = await self._execute(item, session, CommandSource(pending.source))
         name = self._device_name(pending)
         if result.status is ActionStatus.EXECUTED:
             reply = f"Confirmed. The {name} is unlocked."
@@ -207,7 +235,9 @@ class HomeAgent:
         response = self._finish(message, reply="The AI planner is unavailable, so nothing was changed.", errors=[reason])
         raise AIUnavailableError(reason, interaction_id=response.interaction_id)
 
-    async def _execute(self, item: ValidatedAction, session: ToolSession) -> tuple[ActionResult, DeviceEvent | None]:
+    async def _execute(
+        self, item: ValidatedAction, session: ToolSession, source: CommandSource = CommandSource.AI_AGENT
+    ) -> tuple[ActionResult, DeviceEvent | None]:
         action = item.action
         base = {
             "index": item.index,
@@ -224,7 +254,7 @@ class HomeAgent:
 
         assert item.command is not None and action is not None and action.device_id is not None
         try:
-            event = await self._tools.control_device(action.device_id, item.command)
+            event = await self._tools.control_device(action.device_id, item.command, source)
         except DomainError as exc:
             return ActionResult(**base, status=ActionStatus.FAILED, code=exc.code, reason=exc.message), None
         except Exception:

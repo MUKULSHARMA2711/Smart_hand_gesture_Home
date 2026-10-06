@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # "unlock" is blocked here as well (defence in depth against a misread hand pose).
     gesture_blocked_actions: list[str] = ["unlock"]
     gesture_history_max_size: int = Field(default=500, ge=1)
+    # FOUR_FINGERS may *request* a door unlock that must be confirmed (pinch). "unlock" stays in
+    # gesture_blocked_actions: no gesture ever unlocks directly.
+    gesture_door_unlock: bool = True
 
     # AI agent. Provider, model and key also accept the unprefixed AI_PROVIDER / AI_MODEL / AI_API_KEY.
     ai_provider: Literal["mock", "anthropic"] = Field(

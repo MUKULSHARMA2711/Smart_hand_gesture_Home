@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.ai.models import PendingConfirmation
 from app.devices.base import DeviceSnapshot
 from app.devices.commands import DeviceCommand
 from app.devices.types import Capability
@@ -83,6 +84,8 @@ class GestureCommandResponse(BaseModel):
     gesture_event: GestureEvent
     device_event: DeviceEvent | None
     device: DeviceSnapshot
+    # FOUR_FINGERS on a door: the pending unlock to confirm via POST /ai/confirmations/{id}.
+    confirmation: PendingConfirmation | None = None
 
 
 class AICommandRequest(BaseModel):

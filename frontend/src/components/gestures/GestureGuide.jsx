@@ -7,6 +7,7 @@ const GUIDE = [
   { gesture: 'ONE_FINGER', symbol: '☝️', pose: 'Index finger up' },
   { gesture: 'TWO_FINGERS', symbol: '✌️', pose: 'Index and middle fingers up' },
   { gesture: 'PINCH', symbol: '👌', pose: 'Pinch thumb and index (other fingers open), move up/down, release' },
+  { gesture: 'FOUR_FINGERS', symbol: '🖐️', pose: 'Four fingers up, thumb folded (Main Door selected)' },
 ]
 
 // Gestures only control powered devices; door locks need an explicit lock/unlock request.
@@ -17,6 +18,7 @@ const INTENT_EFFECTS = {
   SELECT: 'Next device',
   TOGGLE: 'Flip on/off',
   ADJUST: 'Fan speed / AC temperature, applied on release',
+  UNLOCK_DOOR: 'Request door unlock: pinch to confirm, open palm to cancel',
 }
 
 export function GestureGuide({ intents, blockedActions }) {
@@ -38,7 +40,8 @@ export function GestureGuide({ intents, blockedActions }) {
       </ul>
       {blockedActions.length > 0 && (
         <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-          For safety, gestures cannot trigger: <span className="font-mono">{blockedActions.join(', ')}</span>.
+          For safety, gestures cannot trigger <span className="font-mono">{blockedActions.join(', ')}</span> directly: four
+          fingers only requests an unlock, which runs after you confirm it with a pinch.
         </p>
       )}
     </Panel>

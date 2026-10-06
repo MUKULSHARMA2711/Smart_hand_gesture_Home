@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AdjustmentPanel } from '../components/gestures/AdjustmentPanel'
 import { CameraPanel } from '../components/gestures/CameraPanel'
+import { DoorUnlockPanel } from '../components/gestures/DoorUnlockPanel'
 import { DetectionPanel } from '../components/gestures/DetectionPanel'
 import { GestureGuide } from '../components/gestures/GestureGuide'
 import { GestureHistory } from '../components/gestures/GestureHistory'
@@ -31,6 +32,19 @@ export function GesturePage() {
     onPinch: control.onPinch,
     restartKey: attempt,
   })
+
+  // A pending door unlock fails closed when the camera stops or the hand leaves the view.
+  const { cancelUnlock } = control
+  const unlockPending = control.doorUnlock?.status === 'pending'
+  useEffect(() => {
+    if (unlockPending && recognition.status !== 'running') cancelUnlock('Cancelled: the camera stopped.')
+  }, [unlockPending, recognition.status, cancelUnlock])
+  const handInView = recognition.live.gesture !== 'NEUTRAL'
+  useEffect(() => {
+    if (!unlockPending || handInView) return undefined
+    const timer = setTimeout(() => cancelUnlock('Cancelled: hand out of view.'), 1500)
+    return () => clearTimeout(timer)
+  }, [unlockPending, handInView, cancelUnlock])
 
   // The AI core shows "listening" while the gesture camera is running.
   useEffect(() => {
@@ -89,6 +103,7 @@ export function GesturePage() {
             intents={control.config.intents}
           />
           <TargetSelector devices={devices} selectedId={control.selectedId} onSelect={control.setSelectedId} />
+          <DoorUnlockPanel doorUnlock={control.doorUnlock} />
           <AdjustmentPanel adjustment={control.adjustment} />
           <LastActionPanel lastAction={control.lastAction} deviceNames={deviceNames} />
           <GestureGuide intents={control.config.intents} blockedActions={control.config.blockedActions} />
