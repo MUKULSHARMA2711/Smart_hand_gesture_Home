@@ -30,6 +30,9 @@ class Intent(StrEnum):
     UNLOCK_DOOR = "UNLOCK_DOOR"
     TOGGLE = "TOGGLE"
     STOP = "STOP"
+    # Set the target's adjustable value, whatever it is (fan speed, AC temperature, brightness).
+    # Prepared for the pinch-and-move gesture; no gesture maps to it yet.
+    ADJUST = "ADJUST"
     # Queries (never change a device)
     GET_STATUS = "GET_STATUS"
     GET_ENERGY = "GET_ENERGY"
@@ -56,15 +59,25 @@ INTENT_CAPABILITIES: dict[Intent, Capability] = {
 # TOGGLE flips power, so it needs both power capabilities (never lock/unlock).
 TOGGLE_CAPABILITIES = (Capability.TURN_ON, Capability.TURN_OFF)
 
-VALUE_INTENTS = frozenset({Intent.SET_BRIGHTNESS, Intent.SET_SPEED, Intent.SET_TEMPERATURE})
+# ADJUST resolves to the first of these the device has. Never a lock capability.
+ADJUST_CAPABILITIES = (Capability.SET_SPEED, Capability.SET_TEMPERATURE, Capability.SET_BRIGHTNESS)
+
+VALUE_INTENTS = frozenset({Intent.SET_BRIGHTNESS, Intent.SET_SPEED, Intent.SET_TEMPERATURE, Intent.ADJUST})
 QUERY_INTENTS = frozenset(
     {Intent.GET_STATUS, Intent.GET_ENERGY, Intent.GET_HISTORY, Intent.GET_PREDICTIONS, Intent.GET_ANOMALIES}
 )
 TARGETING_INTENTS = frozenset({Intent.SELECT})
 
 
+def adjust_capability(device: Device) -> Capability | None:
+    """The value ADJUST sets on ``device`` (speed for a fan, temperature for an AC...)."""
+    return next((c for c in ADJUST_CAPABILITIES if device.spec.supports(c)), None)
+
+
 def is_applicable(intent: Intent, device: Device) -> bool:
     """Whether ``device`` declares the capabilities ``intent`` needs."""
+    if intent is Intent.ADJUST:
+        return adjust_capability(device) is not None
     if intent is Intent.TOGGLE:
         return all(device.spec.supports(capability) for capability in TOGGLE_CAPABILITIES)
     capability = INTENT_CAPABILITIES.get(intent)
@@ -90,11 +103,7 @@ class IntentResolver:
         if not is_applicable(intent, device):
             raise IntentNotApplicableError(intent, device.id)
 
-        if intent is Intent.TOGGLE:
-            capability = Capability.TURN_OFF if device.get_state().get("is_on") else Capability.TURN_ON
-        else:
-            capability = INTENT_CAPABILITIES[intent]
-
+        capability = self.capability_for(intent, device)
         action = device.spec.action_for(capability)
         return DeviceCommand(action=action, value=value if intent in VALUE_INTENTS else None)
 
@@ -103,4 +112,8 @@ class IntentResolver:
         """The capability a (resolvable) intent exercises on ``device``."""
         if intent is Intent.TOGGLE:
             return Capability.TURN_OFF if device.get_state().get("is_on") else Capability.TURN_ON
+        if intent is Intent.ADJUST:
+            capability = adjust_capability(device)
+            assert capability is not None  # callers check is_applicable first
+            return capability
         return INTENT_CAPABILITIES[intent]

@@ -34,6 +34,14 @@ class LowConfidenceError(GestureRejectedError):
         )
 
 
+class GestureValueError(GestureRejectedError):
+    code = "invalid_gesture_value"
+
+    def __init__(self, intent: str, value: int | None) -> None:
+        expected = "needs a value" if value is None else "does not take a value"
+        super().__init__(f"Intent '{intent}' {expected}.", details={"intent": intent, "value": value})
+
+
 class GestureActionBlockedError(GestureRejectedError):
     code = "action_blocked"
 

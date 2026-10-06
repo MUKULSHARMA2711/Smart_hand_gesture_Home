@@ -397,6 +397,30 @@ without touching the gesture layer.
   preview, and React state updates about 10 times per second.
 * The gesture page is lazy-loaded, so the main dashboard never downloads MediaPipe.
 
+### Prepared: pinch-to-adjust (not active yet)
+
+Fan speed and AC temperature already exist end to end as the `SET_SPEED` (0–100) and
+`SET_TEMPERATURE` (16–30 °C) capabilities, with ranges published in each device's
+`supported_commands`. For a future gesture, three small additive pieces are in place:
+
+* **`Intent.ADJUST`** (backend) sets the target's own adjustable value: `set_speed` on a
+  fan, `set_temperature` on an AC, `set_brightness` on a light. It is never applicable to
+  a lock, and it is not available to the AI agent.
+* **An optional `value` on gesture commands.** It is rejected for every current gesture
+  (`422 invalid_gesture_value`), because none of the five take one.
+* **`frontend/src/gestures/adjustment.js`** turns vertical hand movement into a previewed
+  value: hand up makes the fan faster and the AC cooler, and values are clamped to the
+  published range. It produces **one** `{intent: "ADJUST", value}` command on release, and
+  none per frame, if nothing changed, or if the hand was lost.
+
+To activate it later:
+1. Recognise `PINCH` in `ruleClassifier.js`.
+2. Add `PINCH: ADJUST` to `GESTURE_INTENTS` in the backend and frontend.
+3. In the gesture hook, start an adjustment on pinch, call `update(y)` each frame for the
+   preview, and send `release()` through the existing gesture endpoint.
+
+The five current mappings and the 0.6 s hold-and-release stabilizer stay as they are.
+
 ### Replacing the classifier
 
 Recognition sits behind a small interface (`frontend/src/gestures/types.js`):

@@ -44,6 +44,8 @@ class GestureCommand(BaseModel):
     intent: Intent
     confidence: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
     target_device_id: str = Field(min_length=1, max_length=64)
+    # Only for value intents (the future pinch adjustment sends one value, on release).
+    value: int | None = Field(default=None, strict=True)
 
 
 class GestureOutcome(StrEnum):
@@ -64,6 +66,7 @@ class GestureEvent(BaseModel):
     confidence: float
     intent: Intent
     target_device_id: str
+    value: int | None = None
     action: str | None = None
     outcome: GestureOutcome
     detail: str | None = None

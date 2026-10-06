@@ -73,6 +73,7 @@ class GestureCommandRequest(BaseModel):
     intent: Intent
     confidence: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
     target_device_id: str = Field(min_length=1, max_length=64)
+    value: int | None = Field(default=None, strict=True, description="Only for value intents (future pinch adjustment).")
 
     def to_command(self) -> GestureCommand:
         return GestureCommand(**self.model_dump())

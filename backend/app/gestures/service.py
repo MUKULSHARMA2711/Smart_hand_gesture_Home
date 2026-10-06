@@ -4,13 +4,14 @@ from collections.abc import Iterable
 from app.domain.command_service import CommandService
 from app.domain.errors import DomainError, IntentNotApplicableError
 from app.domain.home_state import HomeState
-from app.domain.intents import Intent, IntentResolver
+from app.domain.intents import VALUE_INTENTS, Intent, IntentResolver
 from app.events.models import CommandSource
 from app.gestures.errors import (
     GestureActionBlockedError,
     GestureIntentMismatchError,
     GestureNotActionableError,
     GestureRejectedError,
+    GestureValueError,
     LowConfidenceError,
 )
 from app.gestures.history import GestureHistory
@@ -63,7 +64,7 @@ class GestureService:
         try:
             self._validate(command)
             device = self._home.devices.get(command.target_device_id)
-            device_command = self._resolver.resolve(command.intent, device)
+            device_command = self._resolver.resolve(command.intent, device, command.value)
 
             if device_command is None:  # targeting intent (SELECT): nothing to execute
                 event = self._record(command, command.intent.lower(), GestureOutcome.ACKNOWLEDGED)
@@ -92,6 +93,8 @@ class GestureService:
             raise GestureIntentMismatchError(command.gesture, command.intent, expected_intent)
         if command.confidence < self._confidence_threshold:
             raise LowConfidenceError(command.confidence, self._confidence_threshold)
+        if (command.value is not None) != (command.intent in VALUE_INTENTS):
+            raise GestureValueError(command.intent, command.value)
 
     def _record(
         self,
@@ -107,6 +110,7 @@ class GestureService:
             confidence=command.confidence,
             intent=command.intent,
             target_device_id=command.target_device_id,
+            value=command.value,
             action=action,
             outcome=outcome,
             detail=detail,
