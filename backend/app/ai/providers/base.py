@@ -15,6 +15,8 @@ class PlanningRequest:
     message: str
     context: HomeContext
     tools: AgentTools  # providers may only call its read-only tools via call_read_only()
+    # Recent assistant interactions, newest first (for follow-ups such as "turn it on").
+    history: tuple[Any, ...] = ()
 
 
 class AIProvider(ABC):

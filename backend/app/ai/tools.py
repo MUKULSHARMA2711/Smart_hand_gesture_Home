@@ -16,6 +16,7 @@ from app.domain.errors import DeviceNotFoundError
 from app.domain.home_state import HomeState
 from app.events.models import CommandSource, DeviceEvent
 from app.events.store import EventStore
+from app.ml.service import MLService
 
 
 class _NoArgs(BaseModel):
@@ -38,21 +39,32 @@ class ToolError(Exception):
 
 
 class AgentTools:
-    def __init__(self, home: HomeState, events: EventStore, commands: CommandService) -> None:
+    def __init__(
+        self, home: HomeState, events: EventStore, commands: CommandService, ml: MLService | None = None
+    ) -> None:
         self._home = home
         self._events = events
         self._commands = commands
+        self._ml = ml
 
     # --- Read-only tools ---------------------------------------------------------------
 
     def home_context(self) -> HomeContext:
+        """Full context for a request, including ML insights computed once from the same snapshot."""
+        return build_home_context(self._home, self._events, ml=self._ml)
+
+    def session(self, context: HomeContext) -> "ToolSession":
+        """Tools bound to one request: ML tools return exactly the insights in ``context``."""
+        return ToolSession(self._home, self._events, self._commands, self._ml, context)
+
+    def _plain_context(self) -> HomeContext:
         return build_home_context(self._home, self._events)
 
     def get_home_state(self) -> dict[str, Any]:
         return self.home_context().model_dump(mode="json")
 
     def get_device_status(self, device_id: str) -> dict[str, Any]:
-        device = self.home_context().device(device_id)
+        device = self._plain_context().device(device_id)
         if device is None:
             raise ToolError(f"Unknown device '{device_id}'.")
         return device.model_dump(mode="json")
@@ -61,7 +73,7 @@ class AgentTools:
         return [event.model_dump(mode="json") for event in self._events.recent(limit=limit, device_id=device_id)]
 
     def get_energy_usage(self) -> dict[str, Any]:
-        context = self.home_context()
+        context = self._plain_context()
         total = context.energy.total_power_w
         per_device = sorted(
             (
@@ -83,6 +95,18 @@ class AgentTools:
             "top_consumer": per_device[0]["device_id"] if per_device else None,
         }
 
+    def get_predictions(self) -> dict[str, Any]:
+        """Real Random Forest output (never estimated). Recommendations only."""
+        if self._ml is None:
+            return {"available": False, "reason": "Machine-learning models are not available."}
+        return {"available": True, "predictions": [p.model_dump(mode="json") for p in self._ml.predictions()]}
+
+    def get_anomalies(self) -> dict[str, Any]:
+        """Real Isolation Forest results for current and recently reported power readings."""
+        if self._ml is None:
+            return {"available": False, "reason": "Machine-learning models are not available."}
+        return {"available": True, **self._ml.anomaly_report().model_dump(mode="json")}
+
     # --- Executor-only tool ----------------------------------------------------------
 
     async def control_device(self, device_id: str, command: DeviceCommand) -> DeviceEvent:
@@ -98,6 +122,8 @@ class AgentTools:
             "get_device_status": (_DeviceArgs, lambda a: self.get_device_status(a.device_id)),
             "get_recent_events": (_EventsArgs, lambda a: self.get_recent_events(a.limit, a.device_id)),
             "get_energy_usage": (_NoArgs, lambda a: self.get_energy_usage()),
+            "get_predictions": (_NoArgs, lambda a: self.get_predictions()),
+            "get_anomalies": (_NoArgs, lambda a: self.get_anomalies()),
         }
         if name not in handlers:
             raise ToolError(f"Unknown tool '{name}'. Device changes must go in the action plan.")
@@ -110,6 +136,25 @@ class AgentTools:
             return handler(args)
         except DeviceNotFoundError as exc:
             raise ToolError(exc.message) from exc
+
+
+class ToolSession(AgentTools):
+    """Read-only tools for one request. ML values come from the request's HomeContext, so the
+    planner's tool results, its context and the agent's response data are identical."""
+
+    def __init__(self, home, events, commands, ml, context: HomeContext) -> None:
+        super().__init__(home, events, commands, ml)
+        self._context = context
+
+    def get_predictions(self) -> dict[str, Any]:
+        if self._context.ml is None:
+            return super().get_predictions()
+        return {"available": True, "predictions": [p.model_dump(mode="json") for p in self._context.ml.predictions]}
+
+    def get_anomalies(self) -> dict[str, Any]:
+        if self._context.ml is None:
+            return super().get_anomalies()
+        return {"available": True, **self._context.ml.anomalies.model_dump(mode="json")}
 
 
 # JSON-schema definitions of the read-only tools, for LLM providers.
@@ -147,6 +192,18 @@ READ_ONLY_TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "get_energy_usage",
         "description": "Current total power draw, energy used since the backend started, and per-device usage.",
+        "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    },
+    {
+        "name": "get_predictions",
+        "description": "Random Forest predictions (e.g. probability the living-room fan is needed within 30 minutes) "
+        "with the input factors that drove them. Recommendations only; quote these numbers exactly.",
+        "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    },
+    {
+        "name": "get_anomalies",
+        "description": "Isolation Forest energy anomaly results: per device observed watts, learned normal range, "
+        "score and whether the reading is anomalous. Quote these numbers exactly.",
         "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
     },
 ]

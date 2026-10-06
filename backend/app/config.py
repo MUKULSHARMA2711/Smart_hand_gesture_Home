@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     ai_allow_unlock: bool = True
     ai_history_max_size: int = Field(default=100, ge=1)
 
+    # Machine learning (trained at startup on deterministic simulated data)
+    ml_enabled: bool = True
+    ml_seed: int = 7
+    ml_dataset_days: int = Field(default=60, ge=7, le=365)
+    ml_prediction_threshold: float = Field(default=0.5, gt=0, lt=1)
+    ml_anomaly_active_minutes: int = Field(default=15, ge=1)
+
 
 @lru_cache
 def get_settings() -> Settings:

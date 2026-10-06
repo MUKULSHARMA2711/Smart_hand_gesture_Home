@@ -23,7 +23,7 @@ function niceMax(value) {
 }
 
 /** Total power over the samples this browser has collected (one series, so no legend). */
-export function PowerLineChart({ samples }) {
+export function PowerLineChart({ samples, markers = [] }) {
   const container = useRef(null)
   const width = useWidth(container)
   const [hover, setHover] = useState(null)
@@ -41,8 +41,10 @@ export function PowerLineChart({ samples }) {
     const line = points.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('')
     const area = `${line}L${points.at(-1)[0]},${y(0)}L${points[0][0]},${y(0)}Z`
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ value: yMax * f, y: y(yMax * f) }))
-    return { points, line, area, ticks, x, y, innerW }
-  }, [samples, width])
+    // Real anomaly timestamps from the backend, drawn only when they fall inside the sampled window.
+    const anomalyMarks = markers.filter((m) => m.t >= t0 && m.t <= t1).map((m) => ({ ...m, x: x(m.t) }))
+    return { points, line, area, ticks, x, y, innerW, anomalyMarks }
+  }, [samples, width, markers])
 
   if (!geometry) {
     return (
@@ -87,6 +89,14 @@ export function PowerLineChart({ samples }) {
           </text>
         ))}
         <path d={geometry.area} fill="url(#power-area)" />
+        {geometry.anomalyMarks.map((mark) => (
+          <g key={`${mark.t}-${mark.label}`}>
+            <line x1={mark.x} x2={mark.x} y1={PAD.top} y2={HEIGHT - PAD.bottom} stroke="#f87171" strokeWidth="1.5" strokeDasharray="4 3" />
+            <circle cx={mark.x} cy={PAD.top + 4} r="4" fill="#f87171" stroke="#030712" strokeWidth="2">
+              <title>Isolation Forest anomaly · {mark.label}</title>
+            </circle>
+          </g>
+        ))}
         <path d={geometry.line} fill="none" stroke={LINE} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         <circle cx={geometry.points.at(-1)[0]} cy={geometry.points.at(-1)[1]} r="4" fill={LINE} stroke="#030712" strokeWidth="2" />
         {hoverPoint && (

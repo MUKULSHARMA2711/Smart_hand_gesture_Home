@@ -9,6 +9,8 @@ describe('describeAction', () => {
     [{ device_id: 'fan_living_room', intent: 'SET_SPEED', parameters: { value: 70 } }, 'Living Room Fan speed → 70%'],
     [{ device_id: 'door_main', intent: 'LOCK_DOOR', parameters: {} }, 'Main Door → LOCKED'],
     [{ device_id: null, intent: 'GET_ENERGY', parameters: {} }, 'Home energy usage checked'],
+    [{ device_id: 'fan_living_room', intent: 'GET_PREDICTIONS', parameters: {} }, 'Living Room Fan ML prediction checked'],
+    [{ device_id: null, intent: 'GET_ANOMALIES', parameters: {} }, 'Home energy anomalies checked'],
     [{ device_id: 'ghost', intent: 'TURN_OFF', parameters: {} }, 'ghost → OFF'],
     [{ device_id: null, intent: null, parameters: {} }, 'Malformed action'],
   ])('labels %o', (result, expected) => {

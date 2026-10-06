@@ -1,6 +1,10 @@
 import { DevicePowerBars } from '../components/charts/DevicePowerBars'
 import { PowerLineChart } from '../components/charts/PowerLineChart'
+import { AnomalyPanel, PowerReadingTester } from '../components/ml/AnomalyPanel'
+import { ModelCard } from '../components/ml/ModelCard'
 import { Panel } from '../components/Panel'
+import { askAI } from '../lib/ml'
+import { useAssistantContext } from '../state/AssistantContext'
 import { AnimatedNumber } from '../components/SensorStrip'
 import { formatEnergy, formatPower } from '../lib/format'
 import { summarize } from '../state/energyHistory'
@@ -23,7 +27,9 @@ function formatSpan(ms) {
 }
 
 export function EnergyPage() {
-  const { home, energyHistory } = useHomeData()
+  const { home, energyHistory, ml, checkPowerReading } = useHomeData()
+  const { send } = useAssistantContext()
+  const anomalyMarkers = (ml.anomalies?.recent ?? []).map((r) => ({ t: new Date(r.timestamp).getTime(), label: `${r.device_name}: ${r.observed_power_watts.toFixed(1)} W` }))
   const stats = summarize(energyHistory)
   const total = home.energy.total_power_w
 
@@ -46,7 +52,7 @@ export function EnergyPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Panel title="Total power draw">
-          <PowerLineChart samples={energyHistory} />
+          <PowerLineChart samples={energyHistory} markers={anomalyMarkers} />
           <p className="mt-3 text-xs text-slate-500">
             Sampled by this browser from live home state every 5 s
             {stats ? ` · ${stats.samples} samples over ${formatSpan(stats.spanMs)}` : ''}. The backend does not store
@@ -57,19 +63,13 @@ export function EnergyPage() {
           <Panel title="Power by device · now">
             <DevicePowerBars devices={home.devices} total={total} />
           </Panel>
-          <Panel title="Anomaly detection">
-            <div className="flex items-start gap-3">
-              <span className="mt-1 h-3 w-3 shrink-0 rounded-full border-2 border-slate-500" aria-hidden="true" />
-              <div className="text-sm">
-                <p className="font-semibold text-slate-200">Not available yet</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  IntelliHome does not run anomaly detection yet, so no anomalies are reported or shown. When the
-                  backend adds it, abnormal points will be highlighted on the chart and explained by the assistant.
-                </p>
-              </div>
-            </div>
-          </Panel>
+          <AnomalyPanel report={ml.anomalies} onAskAI={() => askAI(send, 'Is there abnormal energy usage?')} />
         </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <PowerReadingTester devices={home.devices} onCheck={checkPowerReading} />
+        <ModelCard status={ml.status} />
       </div>
     </div>
   )

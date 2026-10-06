@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from app.devices.types import Capability, DeviceStatus, DeviceType
 from app.domain.home_state import EnergySnapshot, HomeState
 from app.events.store import EventStore
+from app.ml.models import MLInsights
+from app.ml.service import MLService
 from app.sensors.base import SensorReadings
 
 
@@ -36,12 +38,16 @@ class HomeContext(BaseModel):
     environment: SensorReadings
     energy: EnergySnapshot
     recent_events: list[EventContext]
+    # Real ML output for this request (None when ML is unavailable). Never estimated by the planner.
+    ml: MLInsights | None = None
 
     def device(self, device_id: str) -> DeviceContext | None:
         return next((device for device in self.devices if device.id == device_id), None)
 
 
-def build_home_context(home: HomeState, events: EventStore, *, recent_events: int = 5) -> HomeContext:
+def build_home_context(
+    home: HomeState, events: EventStore, *, recent_events: int = 5, ml: MLService | None = None
+) -> HomeContext:
     snapshot = home.snapshot()
     return HomeContext(
         timestamp=snapshot.timestamp,
@@ -66,4 +72,5 @@ def build_home_context(home: HomeState, events: EventStore, *, recent_events: in
             )
             for e in events.recent(limit=recent_events)
         ],
+        ml=ml.insights(snapshot) if ml else None,
     )

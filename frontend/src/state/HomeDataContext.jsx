@@ -17,6 +17,7 @@ export function HomeDataProvider({ children }) {
   const [gestureEvents, setGestureEvents] = useState([])
   const [aiInteractions, setAiInteractions] = useState([])
   const [energyHistory, setEnergyHistory] = useState([])
+  const [ml, setMl] = useState({ status: null, prediction: null, anomalies: null, error: null })
 
   useEffect(() => {
     if (dashboard.home) setEnergyHistory((history) => appendSample(history, dashboard.home))
@@ -25,17 +26,40 @@ export function HomeDataProvider({ children }) {
   // Device events are re-fetched on every poll and after every command; follow them.
   useEffect(() => {
     let cancelled = false
-    Promise.allSettled([api.getGestureEvents(30), api.getAIHistory(30)]).then(([gestures, ai]) => {
-      if (cancelled) return
-      if (gestures.status === 'fulfilled') setGestureEvents(gestures.value)
-      if (ai.status === 'fulfilled') setAiInteractions(ai.value)
-    })
+    Promise.allSettled([api.getGestureEvents(30), api.getAIHistory(30), api.predict(), api.getAnomalies()]).then(
+      ([gestures, ai, prediction, anomalies]) => {
+        if (cancelled) return
+        if (gestures.status === 'fulfilled') setGestureEvents(gestures.value)
+        if (ai.status === 'fulfilled') setAiInteractions(ai.value)
+        // ML results are always the backend's; nothing is estimated in the browser.
+        setMl((current) => ({
+          ...current,
+          prediction: prediction.status === 'fulfilled' ? prediction.value : null,
+          anomalies: anomalies.status === 'fulfilled' ? anomalies.value : null,
+          error: prediction.status === 'rejected' ? prediction.reason.message : null,
+        }))
+      },
+    )
     return () => {
       cancelled = true
     }
   }, [dashboard.events])
 
-  const { sendCommand: rawSendCommand } = dashboard
+  useEffect(() => {
+    api.getMLStatus().then((status) => setMl((current) => ({ ...current, status }))).catch(() => {})
+  }, [])
+
+  const { sendCommand: rawSendCommand, refresh } = dashboard
+
+  /** Submit a power reading for anomaly detection, then refresh so events and alerts update. */
+  const checkPowerReading = useCallback(
+    async (deviceId, powerW) => {
+      const result = await api.checkPowerReading(deviceId, powerW)
+      await refresh()
+      return result
+    },
+    [refresh],
+  )
   const sendCommand = useCallback(
     async (deviceId, action, value) => {
       const response = await rawSendCommand(deviceId, action, value)
@@ -51,8 +75,8 @@ export function HomeDataProvider({ children }) {
   )
 
   const value = useMemo(
-    () => ({ ...dashboard, sendCommand, gestureEvents, aiInteractions, energyHistory, deviceNames }),
-    [dashboard, sendCommand, gestureEvents, aiInteractions, energyHistory, deviceNames],
+    () => ({ ...dashboard, sendCommand, gestureEvents, aiInteractions, energyHistory, deviceNames, ml, checkPowerReading }),
+    [dashboard, sendCommand, gestureEvents, aiInteractions, energyHistory, deviceNames, ml, checkPowerReading],
   )
   return <HomeDataContext.Provider value={value}>{children}</HomeDataContext.Provider>
 }

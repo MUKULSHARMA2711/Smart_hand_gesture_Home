@@ -47,6 +47,10 @@ _OFF = re.compile(r"\b(off|shut|stop)\b")
 _ON = re.compile(r"\b(on|start)\b")
 _NUMBER = re.compile(r"-?\d+")
 _SETTING = re.compile(r"\b(set|dim|brighten|change|make|adjust|put|increase|decrease|raise|lower|to)\b|%")
+# ML questions. "Should I turn on the fan?" asks for advice, so it is not treated as a command.
+_ANOMALY_Q = re.compile(r"\b(unusual|abnormal\w*|anomal\w*|strange|weird|odd|spikes?|faulty|malfunction\w*)\b")
+_ADVICE_Q = re.compile(r"\b(should i|do i need|predict\w*|forecast\w*|recommend\w*|likely|needed soon)\b")
+_PRONOUN = re.compile(r"\b(it|that|them|this)\b")
 
 _HELP = (
     "I'm not sure what you'd like me to do. Try 'turn on the living room light', "
@@ -84,8 +88,9 @@ def describe_state(device: DeviceContext) -> str:
 
 
 class _Planner:
-    def __init__(self, context: HomeContext) -> None:
+    def __init__(self, context: HomeContext, history: tuple = ()) -> None:
         self.context = context
+        self.history = history  # recent AgentResponses, newest first
         self.devices = context.devices
         self.rooms = sorted({device.room for device in self.devices})
 
@@ -93,6 +98,10 @@ class _Planner:
 
     def plan(self, message: str) -> dict[str, Any]:
         text = message.lower().strip()
+        if _ANOMALY_Q.search(text):
+            return self._anomaly_query()
+        if _ADVICE_Q.search(text):
+            return self._prediction_query()
         has_control = bool(_CONTROL.search(text))
         leaving = bool(_LEAVING.search(text))
 
@@ -116,6 +125,69 @@ class _Planner:
             return {"message": _HELP, "actions": []}
 
         return {"message": " ".join([self._describe(actions, leaving), *notes]).strip(), "actions": actions}
+
+    # --- ML questions (answered only from real ML output in the context) ------------------
+
+    def _prediction_query(self) -> dict[str, Any]:
+        ml = self.context.ml
+        if ml is None or not ml.predictions:
+            return {"message": "Predictions are not available right now, so I can't make a recommendation.", "actions": []}
+        p = ml.predictions[0]
+        device = self.context.device(p.device_id)
+        percent = round(p.probability * 100)
+        reasons = [f.description for f in p.factors if f.feature in p.reason_features]
+        if p.prediction == "ON":
+            lead = (
+                f"Random Forest estimates a {percent}% probability that the {p.device_name} will be needed "
+                f"in the next {p.horizon_minutes} minutes, so it is recommended."
+            )
+        else:
+            lead = (
+                f"Probably not yet: Random Forest estimates only a {percent}% probability that the "
+                f"{p.device_name} will be needed in the next {p.horizon_minutes} minutes."
+            )
+        why = f" Main factors: {'; '.join(reasons)}." if reasons else ""
+        if device and device.state.get("is_on"):
+            tail = " It is already on."
+        elif p.prediction == "ON":
+            tail = " This is only a recommendation; say 'turn it on' if you want me to switch it on."
+        else:
+            tail = ""
+        return {
+            "message": lead + why + tail,
+            "actions": [{"device_id": p.device_id, "intent": Intent.GET_PREDICTIONS, "parameters": {}}],
+        }
+
+    def _anomaly_query(self) -> dict[str, Any]:
+        ml = self.context.ml
+        if ml is None:
+            return {"message": "Anomaly detection is not available right now.", "actions": []}
+        report = ml.anomalies
+        flagged = report.active or [r for r in report.live if r.is_anomaly]
+        if flagged:
+            first = flagged[0]
+            message = (
+                f"Isolation Forest flagged an unusual energy reading for the {first.device_name}: "
+                f"{first.observed_power_watts:.1f} W while {first.setting}, against a learned normal range of "
+                f"{first.expected_range.min:.1f}–{first.expected_range.max:.1f} W."
+            )
+            if len(flagged) > 1:
+                message += f" {len(flagged) - 1} more anomalous reading(s) were detected recently."
+            action = {"device_id": first.device_id, "intent": Intent.GET_ANOMALIES, "parameters": {}}
+        else:
+            message = (
+                f"Nothing unusual: all {len(report.live)} devices are drawing power within the ranges "
+                "Isolation Forest learned as normal for their current settings."
+            )
+            action = {"intent": Intent.GET_ANOMALIES, "parameters": {}}
+        return {"message": message, "actions": [action]}
+
+    def _history_targets(self) -> list[DeviceContext] | None:
+        if not self.history:
+            return None
+        ids = [a.device_id for a in getattr(self.history[0], "actions", []) if a.device_id]
+        devices = [d for d in self.devices if d.id in ids]
+        return devices or None
 
     # --- Queries ---------------------------------------------------------------------------
 
@@ -192,6 +264,8 @@ class _Planner:
 
         for clause in filter(None, _CLAUSE_SPLIT.split(text)):
             explicit = self._explicit_targets(clause)
+            if explicit is None and last_targets is None and _PRONOUN.search(clause):
+                explicit = self._history_targets()  # "turn it on" refers to the previous turn
             broad = self._broad_targets(clause) if explicit is None else None
             intent, value = self._clause_intent(clause)
             if intent is None and explicit is not None and last_intent is not None and last_intent != "SET":
@@ -315,7 +389,7 @@ class MockAIProvider(AIProvider):
     model = "rule-based"
 
     async def plan(self, request: PlanningRequest) -> dict[str, Any]:
-        plan = _Planner(request.context).plan(request.message)
+        plan = _Planner(request.context, request.history).plan(request.message)
         # Serialise enums exactly as an LLM would emit them (plain JSON strings).
         plan["actions"] = [{**a, "intent": str(a["intent"])} for a in plan["actions"]]
         return plan

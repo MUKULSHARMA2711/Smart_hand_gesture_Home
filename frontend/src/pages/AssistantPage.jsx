@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChatTurn } from '../components/assistant/ChatTurn'
 import { LifecyclePipeline } from '../components/assistant/LifecyclePipeline'
 import { HouseView } from '../components/house/HouseView'
+import { PredictionCard } from '../components/ml/PredictionCard'
 import { OrbStatus } from '../components/OrbStatus'
 import { Panel } from '../components/Panel'
 import { useAssistantContext } from '../state/AssistantContext'
@@ -16,6 +17,8 @@ const SUGGESTIONS = [
   'Lock the front door',
   "What's happening in my house?",
   'How much energy are we using?',
+  'Should I turn on the fan?',
+  'Is anything unusual?',
 ]
 
 function Composer({ sending, onSend, onTyping }) {
@@ -108,7 +111,7 @@ function RecentAIActions({ events, deviceNames }) {
 }
 
 export function AssistantPage() {
-  const { home, events, deviceNames } = useHomeData()
+  const { home, events, deviceNames, ml } = useHomeData()
   const devicesById = Object.fromEntries(home.devices.map((device) => [device.id, device]))
   const assistant = useAssistantContext()
   const scrollRef = useRef(null)
@@ -166,6 +169,10 @@ export function AssistantPage() {
             deviceNames={deviceNames}
           />
         </Panel>
+        <PredictionCard
+          prediction={ml.prediction}
+          onAskAI={() => assistant.send(`Why is the ${ml.prediction?.device_name ?? 'fan'} recommended?`)}
+        />
         <div className="grid gap-6 md:grid-cols-2">
           <ProviderPanel status={assistant.status} statusError={assistant.statusError} />
           <RecentAIActions events={events} deviceNames={deviceNames} />

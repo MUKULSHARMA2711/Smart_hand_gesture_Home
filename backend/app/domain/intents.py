@@ -34,6 +34,8 @@ class Intent(StrEnum):
     GET_STATUS = "GET_STATUS"
     GET_ENERGY = "GET_ENERGY"
     GET_HISTORY = "GET_HISTORY"
+    GET_PREDICTIONS = "GET_PREDICTIONS"  # ML: predictive automation
+    GET_ANOMALIES = "GET_ANOMALIES"  # ML: energy anomaly detection
     # Targeting / no-op
     SELECT = "SELECT"
     NONE = "NONE"
@@ -55,7 +57,9 @@ INTENT_CAPABILITIES: dict[Intent, Capability] = {
 TOGGLE_CAPABILITIES = (Capability.TURN_ON, Capability.TURN_OFF)
 
 VALUE_INTENTS = frozenset({Intent.SET_BRIGHTNESS, Intent.SET_SPEED, Intent.SET_TEMPERATURE})
-QUERY_INTENTS = frozenset({Intent.GET_STATUS, Intent.GET_ENERGY, Intent.GET_HISTORY})
+QUERY_INTENTS = frozenset(
+    {Intent.GET_STATUS, Intent.GET_ENERGY, Intent.GET_HISTORY, Intent.GET_PREDICTIONS, Intent.GET_ANOMALIES}
+)
 TARGETING_INTENTS = frozenset({Intent.SELECT})
 
 

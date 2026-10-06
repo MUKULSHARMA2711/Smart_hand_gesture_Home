@@ -8,7 +8,7 @@ import { formatPower } from '../lib/format'
 
 export const SENSOR_STALE_MS = 20_000
 
-export function homeHealth(home, now = Date.now()) {
+export function homeHealth(home, now = Date.now(), anomalies = null) {
   if (!home) return { checks: [], info: [], passed: 0, total: 0 }
   const devices = home.devices ?? []
   const online = devices.filter((device) => device.status === 'online').length
@@ -38,6 +38,19 @@ export function homeHealth(home, now = Date.now()) {
     },
   ]
 
+  if (anomalies) {
+    // Real Isolation Forest results from GET /ml/anomalies.
+    const flagged = [...anomalies.active, ...anomalies.live.filter((r) => r.is_anomaly)]
+    checks.push({
+      id: 'energy_anomalies',
+      label: 'Energy anomalies',
+      status: flagged.length ? 'warning' : 'ok',
+      detail: flagged.length
+        ? `${flagged[0].device_name}: ${flagged[0].observed_power_watts.toFixed(1)} W (normal ${flagged[0].expected_range.min.toFixed(1)}–${flagged[0].expected_range.max.toFixed(1)} W)`
+        : 'None (Isolation Forest)',
+    })
+  }
+
   const total = home.energy?.total_power_w ?? 0
   const top = [...devices].sort((a, b) => b.power_w - a.power_w)[0]
   const info = [
@@ -46,7 +59,7 @@ export function homeHealth(home, now = Date.now()) {
       label: 'Power draw',
       detail: top && total ? `${formatPower(total)} · ${top.name} ${Math.round((100 * top.power_w) / total)}%` : formatPower(total),
     },
-    { id: 'anomalies', label: 'Anomaly detection', detail: 'Not available yet' },
+    ...(anomalies ? [] : [{ id: 'anomalies', label: 'Anomaly detection', detail: 'Not available yet' }]),
   ]
 
   return { checks, info, passed: checks.filter((c) => c.status === 'ok').length, total: checks.length }

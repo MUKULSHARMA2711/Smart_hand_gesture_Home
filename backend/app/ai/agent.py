@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app.ai.history import InMemoryAgentHistory
 from app.ai.models import ActionPlan, ActionResult, ActionStatus, AgentResponse
 from app.ai.providers.base import AIProvider, AIProviderError, PlanningRequest
-from app.ai.tools import AgentTools
+from app.ai.tools import AgentTools, ToolSession
 from app.ai.validation import PlanValidator, ValidatedAction
 from app.domain.errors import DomainError
 from app.domain.intents import Intent
@@ -45,8 +45,12 @@ class HomeAgent:
 
     async def handle(self, message: str) -> AgentResponse:
         context = self._tools.home_context()
+        session = self._tools.session(context)
+        history = tuple(self._history.recent(limit=3))
         try:
-            raw_plan = await self._provider.plan(PlanningRequest(message=message, context=context, tools=self._tools))
+            raw_plan = await self._provider.plan(
+                PlanningRequest(message=message, context=context, tools=session, history=history)
+            )
         except AIProviderError as exc:
             logger.warning("AI provider failed: %s", exc)
             return self._finish(message, reply="The AI planner is unavailable, so nothing was changed.", errors=[str(exc)])
@@ -65,14 +69,14 @@ class HomeAgent:
         results: list[ActionResult] = []
         device_events: list[DeviceEvent] = []
         for item in validated:
-            result, event = await self._execute(item)
+            result, event = await self._execute(item, session)
             results.append(result)
             if event is not None:
                 device_events.append(event)
 
         return self._finish(message, reply=plan.message, results=results, device_events=device_events, plan_valid=True)
 
-    async def _execute(self, item: ValidatedAction) -> tuple[ActionResult, DeviceEvent | None]:
+    async def _execute(self, item: ValidatedAction, session: ToolSession) -> tuple[ActionResult, DeviceEvent | None]:
         action = item.action
         base = {
             "index": item.index,
@@ -85,7 +89,7 @@ class HomeAgent:
             return ActionResult(**base, status=ActionStatus.REJECTED, code=item.rejection_code, reason=item.rejection_reason), None
 
         if item.is_query:
-            return ActionResult(**base, status=ActionStatus.ANSWERED, data=self._query(item)), None
+            return ActionResult(**base, status=ActionStatus.ANSWERED, data=self._query(item, session)), None
 
         assert item.command is not None and action is not None and action.device_id is not None
         try:
@@ -104,17 +108,23 @@ class HomeAgent:
             event,
         )
 
-    def _query(self, item: ValidatedAction):
+    @staticmethod
+    def _query(item: ValidatedAction, session: ToolSession):
+        """Answer read-only intents from backend data (ML values come from this request's context)."""
         assert item.action is not None
         match item.action.intent:
             case Intent.GET_ENERGY:
-                return self._tools.get_energy_usage()
+                return session.get_energy_usage()
             case Intent.GET_HISTORY:
-                return self._tools.get_recent_events(item.parameters.get("limit", 10), item.action.device_id)
+                return session.get_recent_events(item.parameters.get("limit", 10), item.action.device_id)
+            case Intent.GET_PREDICTIONS:
+                return session.get_predictions()
+            case Intent.GET_ANOMALIES:
+                return session.get_anomalies()
             case _:
                 if item.action.device_id:
-                    return self._tools.get_device_status(item.action.device_id)
-                return self._tools.get_home_state()
+                    return session.get_device_status(item.action.device_id)
+                return session.get_home_state()
 
     def _finish(
         self,

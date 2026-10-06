@@ -4,3 +4,5 @@ pydantic>=2.8,<3.0
 pydantic-settings>=2.4,<3.0
 # Only used when SMARTHOME_AI_PROVIDER=anthropic (imported lazily).
 anthropic>=1.11,<2.0
+# Machine learning (Phase 5): Random Forest + Isolation Forest.
+scikit-learn>=1.5,<2.0

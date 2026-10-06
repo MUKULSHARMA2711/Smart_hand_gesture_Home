@@ -53,6 +53,16 @@ export const api = {
 
   getAIHistory: (limit = 20) => request(`/ai/history?limit=${limit}`),
 
+  getMLStatus: () => request('/ml/status'),
+
+  predict: (body = {}) => request('/ml/predict', { method: 'POST', body: JSON.stringify(body) }),
+
+  getAnomalies: () => request('/ml/anomalies'),
+
+  /** Assess one power reading, as a hardware power meter would report it. */
+  checkPowerReading: (deviceId, powerW) =>
+    request('/ml/anomalies/check', { method: 'POST', body: JSON.stringify({ device_id: deviceId, power_w: powerW }) }),
+
   getGestureConfig: () => request('/gestures/config'),
 
   getGestureEvents: (limit = 15) => request(`/gestures/events?limit=${limit}`),

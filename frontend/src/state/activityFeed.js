@@ -9,6 +9,7 @@ export const SOURCE_TAGS = {
   ai_agent: 'AI AGENT',
   automation: 'AUTOMATION',
   mqtt: 'MQTT',
+  ml: 'ML',
 }
 
 const ACTION_RESULTS = {
@@ -27,17 +28,38 @@ export function deviceEventLine(event, deviceNames = {}) {
   return `${name} → ${result}`
 }
 
+/** "LIVING ROOM FAN → ENERGY ANOMALY 170.0 W (normal 34.6–42.5 W)" from a real ML event. */
+export function anomalyEventLine(event, deviceNames = {}) {
+  const name = (deviceNames[event.device_id] ?? event.device_id).toUpperCase()
+  const range = event.details?.expected_range
+  const normal = range ? ` (normal ${range.min.toFixed(1)}–${range.max.toFixed(1)} W)` : ''
+  return `${name} → ENERGY ANOMALY ${Number(event.value).toFixed(1)} W${normal}`
+}
+
 export function buildActivityFeed({ deviceEvents = [], gestureEvents = [], aiInteractions = [], deviceNames = {} }) {
   const entries = [
-    ...deviceEvents.map((event) => ({
-      id: `device:${event.event_id}`,
-      timestamp: event.timestamp,
-      kind: 'device',
-      source: event.source,
-      tag: SOURCE_TAGS[event.source] ?? event.source.toUpperCase(),
-      text: deviceEventLine(event, deviceNames),
-      tone: 'ok',
-    })),
+    ...deviceEvents.map((event) =>
+      event.event_type === 'energy_anomaly'
+        ? {
+            id: `device:${event.event_id}`,
+            timestamp: event.timestamp,
+            kind: 'ml',
+            source: event.source,
+            tag: 'ML',
+            text: anomalyEventLine(event, deviceNames),
+            detail: `Isolation Forest · score ${event.details?.score ?? '—'}`,
+            tone: 'error',
+          }
+        : {
+            id: `device:${event.event_id}`,
+            timestamp: event.timestamp,
+            kind: 'device',
+            source: event.source,
+            tag: SOURCE_TAGS[event.source] ?? event.source.toUpperCase(),
+            text: deviceEventLine(event, deviceNames),
+            tone: 'ok',
+          },
+    ),
     ...gestureEvents.map((event) => ({
       id: `gesture:${event.event_id}`,
       timestamp: event.timestamp,

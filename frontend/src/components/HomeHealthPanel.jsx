@@ -7,8 +7,8 @@ const STATUS = {
 }
 
 /** Verifiable checks only; no invented score (see state/homeHealth.js). */
-export function HomeHealthPanel({ home }) {
-  const health = homeHealth(home)
+export function HomeHealthPanel({ home, anomalies = null }) {
+  const health = homeHealth(home, Date.now(), anomalies)
   const fraction = health.total ? health.passed / health.total : 0
   const circumference = 2 * Math.PI * 22
 

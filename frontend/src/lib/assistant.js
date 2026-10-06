@@ -8,7 +8,13 @@ const VALUE_LABELS = {
 
 const RESULT_LABELS = { TURN_ON: 'ON', TURN_OFF: 'OFF', LOCK_DOOR: 'LOCKED', UNLOCK_DOOR: 'UNLOCKED' }
 
-const QUERY_LABELS = { GET_STATUS: 'status checked', GET_ENERGY: 'energy usage checked', GET_HISTORY: 'history checked' }
+const QUERY_LABELS = {
+  GET_STATUS: 'status checked',
+  GET_ENERGY: 'energy usage checked',
+  GET_HISTORY: 'history checked',
+  GET_PREDICTIONS: 'ML prediction checked',
+  GET_ANOMALIES: 'energy anomalies checked',
+}
 
 export const STATUS_STYLES = {
   executed: { icon: '✓', label: 'Done', tone: 'text-emerald-700 dark:text-emerald-400' },

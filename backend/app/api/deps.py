@@ -7,6 +7,8 @@ from fastapi import Depends, Request
 from app.ai.agent import HomeAgent
 from app.ai.history import InMemoryAgentHistory
 from app.container import Container
+from app.ml.errors import MLUnavailableError
+from app.ml.service import MLService
 from app.domain.command_service import CommandService
 from app.domain.home_state import HomeState
 from app.events.store import EventStore
@@ -58,3 +60,12 @@ def get_agent_history(container: ContainerDep) -> InMemoryAgentHistory:
 
 AgentDep = Annotated[HomeAgent, Depends(get_agent)]
 AgentHistoryDep = Annotated[InMemoryAgentHistory, Depends(get_agent_history)]
+
+
+def get_ml_service(container: ContainerDep) -> MLService:
+    if container.ml_service is None:
+        raise MLUnavailableError()
+    return container.ml_service
+
+
+MLServiceDep = Annotated[MLService, Depends(get_ml_service)]

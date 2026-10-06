@@ -3,6 +3,8 @@ import { QuickCommand } from '../components/assistant/QuickCommand'
 import { EventConsole } from '../components/console/EventConsole'
 import { DeviceCard } from '../components/DeviceCard'
 import { HomeHealthPanel } from '../components/HomeHealthPanel'
+import { PredictionCard } from '../components/ml/PredictionCard'
+import { askAI } from '../lib/ml'
 import { DeviceInspector } from '../components/house/DeviceInspector'
 import { HouseView } from '../components/house/HouseView'
 import { SceneSensors } from '../components/house/SceneSensors'
@@ -14,8 +16,8 @@ import { useAssistantContext } from '../state/AssistantContext'
 import { useHomeData } from '../state/HomeDataContext'
 
 export function HomePage() {
-  const { home, events, gestureEvents, aiInteractions, deviceNames, sendCommand, pendingDeviceId } = useHomeData()
-  const { orbState } = useAssistantContext()
+  const { home, events, gestureEvents, aiInteractions, deviceNames, sendCommand, pendingDeviceId, ml } = useHomeData()
+  const { orbState, send } = useAssistantContext()
   const [selectedId, setSelectedId] = useState(null)
   const feed = useMemo(
     () => buildActivityFeed({ deviceEvents: events, gestureEvents, aiInteractions, deviceNames }),
@@ -42,7 +44,11 @@ export function HomePage() {
 
         <aside className="space-y-6">
           <DeviceInspector deviceId={selectedId} onClose={() => setSelectedId(null)} />
-          <HomeHealthPanel home={home} />
+          <PredictionCard
+            prediction={ml.prediction}
+            onAskAI={() => askAI(send, `Why is the ${ml.prediction?.device_name ?? 'fan'} recommended?`)}
+          />
+          <HomeHealthPanel home={home} anomalies={ml.anomalies} />
           <EventConsole entries={feed} limit={7} />
         </aside>
       </div>

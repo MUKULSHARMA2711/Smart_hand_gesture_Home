@@ -18,6 +18,9 @@ business logic or the (future) AI layer.
 * **Day 4:** a **3D command center**: a live digital twin of the house (React Three
   Fiber) with an AI core, command beams, energy analytics and an activity console, all
   driven by real backend state. See [3D command center](#3d-command-center-day-4).
+* **Phase 5:** **machine learning**: Random Forest fan-usage prediction and Isolation Forest
+  energy anomaly detection, explained by the AI agent and shown in the 3D UI. See
+  [Machine Learning Intelligence](#machine-learning-intelligence).
 
 ```
 smart-ai-home/
@@ -181,6 +184,8 @@ every command it re-fetches state and events immediately.
 | POST | `/api/v1/ai/command` | Natural-language request → validated plan → execution |
 | GET | `/api/v1/ai/status` | AI provider, allowed intents, per-device capabilities, security policy |
 | GET | `/api/v1/ai/history?limit=20` | Recent assistant interactions, newest first |
+| GET | `/api/v1/ml/status` · POST `/api/v1/ml/predict` | ML models and fan-usage prediction |
+| GET | `/api/v1/ml/anomalies` · POST `/api/v1/ml/anomalies/check` | Energy anomaly detection |
 | GET | `/api/v1/health` | Liveness check |
 
 ### Devices and commands
@@ -774,7 +779,127 @@ classifier and stabilizer tests are unchanged.
 
 ---
 
+## Machine Learning Intelligence
+
+> **Current training data is simulated, because physical hardware is not yet available.**
+> Both models are trained at startup on deterministic data generated from IntelliHome's own
+> sensor and device models. The metrics below describe that simulation, not real-world
+> accuracy. With real sensor history, the same pipeline retrains on real data.
+
+```
+PREDICTION   HomeState ─► features.py ─► Random Forest ─► Prediction ─► AI explains (recommendation only)
+ANOMALY      device power + setting ─► Isolation Forest ─► AnomalyResult ─► event (source=ml) ─► AI explains
+EXECUTION    only explicit user requests ─► AI action plan ─► validation ─► CommandService ─► device
+```
+
+The ML layer lives in `backend/app/ml/` (`features`, `dataset`, `prediction`, `anomaly`,
+`service`, `models`). It does not depend on FastAPI, React, device implementations or
+`CommandService`. **ML recommends and detects; the AI or the user decides; `CommandService`
+executes.** The API also refuses device commands that claim `source: "ml"`.
+
+### Predictive automation: `random_forest_v1`
+
+| | |
+|---|---|
+| Target | `FAN_ON_SOON`: will the living-room fan be on within the next 30 minutes? |
+| Model | `RandomForestClassifier`, 120 trees, max depth 8 |
+| Features | hour, day of week, temperature, humidity, occupied, occupant count, ambient light, fan on now, fan used in the last 30 minutes |
+| Data | 60 simulated days at 15-minute steps (5,757 samples, 28.8% positive), seed 7 |
+| Simulation | Same daily temperature, humidity and daylight cycle as the sensor simulator, with hotter and cooler days; weekday/weekend occupancy schedule; comfort-driven fan use (hot, humid, occupied → fan more likely; less use at night) |
+
+Evaluation on a stratified 25% held-out split (1,440 samples):
+
+| Accuracy | Majority baseline | Precision | Recall | F1 | Confusion matrix [[TN, FP], [FN, TP]] |
+|---|---|---|---|---|---|
+| 87.4% | 71.3% | 82.1% | 72.0% | 0.767 | [[961, 65], [116, 298]] |
+
+Most important features: fan on now (0.31), temperature (0.22), fan used recently (0.15),
+humidity (0.10).
+
+**Explainability.** Each prediction lists its inputs and how much each one moved the
+probability: the model is re-run with that input set to its typical (median) value. The
+response says, for example: *"Random Forest predicted a 83% probability that the Living Room
+Fan will be needed within 30 minutes. Main factors: Temperature 30.0 °C (typical 25.6 °C);
+…"*. Missing inputs are imputed with the training median and listed in `missing_features`.
+
+### Energy anomaly detection: `isolation_forest_v1`
+
+One `IsolationForest` per device type, trained on **(setting level, watts)**. The setting
+level is 0 when the device is off and 10–100 when it is on (brightness, speed, or how cold
+the AC set point is). Normal readings come from the existing virtual-device power models
+plus about 3% meter noise. About 2% of the training data is injected faults: surges
+(×2.2–4), stalls (power near zero while running) and phantom draw (power while off).
+
+* The alarm threshold is learned so that 99.8% of normal training readings pass. A reading
+  is anomalous when its score falls below it; `score < 0` means anomalous.
+* The **normal range** reported with each result is the 0.5–99.5th percentile of normal
+  readings at that setting. For example, the fan at speed 60 is normal at 34.6–42.5 W.
+* All 168 legitimate virtual-device states are classified as normal (tested), so live
+  devices never raise false alarms.
+
+Held-out evaluation (30% split, 750 readings and 15 injected faults per device):
+
+| Device | Precision | Recall | F1 | False-alarm rate |
+|---|---|---|---|---|
+| Light | 92.3% | 80.0% | 0.857 | 0.14% |
+| Fan | 100% | 80.0% | 0.889 | 0.00% |
+| AC | 86.7% | 86.7% | 0.867 | 0.27% |
+| Door lock | 93.8% | 100% | 0.968 | 0.14% |
+
+Virtual devices always report their modelled power, so in the simulation real anomalies
+only arrive as **reported readings** (`POST /api/v1/ml/anomalies/check`), which is how a
+future hardware power meter will feed the system. The Energy page has a small form for
+submitting one. Every anomaly is recorded in the existing event log as
+`event_type: "energy_anomaly"`, `source: "ml"`, with the score and normal range in `details`.
+
+### API
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/ml/status` | Model versions, evaluation metrics, feature importances, data note |
+| POST | `/api/v1/ml/predict` | `{}` derives features from live HomeState; optional `{"features": {...}}` overrides (`null` = missing) |
+| GET | `/api/v1/ml/anomalies` | Live per-device assessment plus recent and active anomalous readings |
+| POST | `/api/v1/ml/anomalies/check` | Assess `{"device_id", "power_w"}`; anomalies are logged as events |
+
+```bash
+curl -s -X POST localhost:8000/api/v1/ml/predict -H "Content-Type: application/json" -d '{}'
+curl -s -X POST localhost:8000/api/v1/ml/anomalies/check -H "Content-Type: application/json" \
+     -d '{"device_id": "fan_living_room", "power_w": 170}'
+```
+
+### AI integration
+
+* The agent has two read-only tools, `get_predictions()` and `get_anomalies()`, and two
+  query intents, `GET_PREDICTIONS` and `GET_ANOMALIES`.
+* ML results are computed **once per request** and placed in the planner's context. The
+  tools return those same values, and the response's `data` carries them. Whatever the
+  planner writes, the structured answer contains the real model output (tested with a
+  planner that invents "99.9%").
+* The Claude prompt requires ML numbers to be quoted from the context or tools and the
+  model to be named. The mock planner builds its sentences from the ML result.
+* Examples:
+  * "Should I turn on the fan?" → *"Random Forest estimates a 86% probability … Main
+    factors: … This is only a recommendation; say 'turn it on' if you want me to switch it on."*
+  * "turn it on" → resolved to the fan from the previous turn → `TURN_ON` → validation →
+    `CommandService` (`source=ai_agent`).
+  * "Is anything unusual?" → *"Isolation Forest flagged an unusual energy reading for the
+    Living Room Fan: 170.0 W while on at speed 60%, against a learned normal range of
+    34.6–42.5 W."*
+
+### In the UI
+
+* **Home**: an AI prediction card (probability, main factors, "Recommendation only",
+  **Ask AI why**), plus an energy-anomaly check in Home status.
+* **3D scene**: anomalous devices get a pulsing red ring and an "⚠ Anomaly" tag. A
+  predicted device gets a subtle "AI 91%" badge.
+* **Energy**: an anomaly panel (live table, active anomalies with observed vs. normal),
+  red markers on the power chart, a reading tester, and a model card with all metrics.
+* **Assistant**: the prediction card and ML suggestion chips.
+* **Activity**: an "ML anomalies" filter.
+
+---
+
 ## Out of scope so far
 
-Voice control, predictive ML, anomaly detection, multi-agent architecture, facial recognition,
+Voice control, multi-agent architecture, facial recognition, vector databases/RAG,
 authentication, PostgreSQL, and real MQTT/ESP32 hardware communication.

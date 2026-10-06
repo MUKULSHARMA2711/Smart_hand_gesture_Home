@@ -6,6 +6,7 @@ const SOURCE_STYLES = {
   ai_agent: { label: 'AI agent', className: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300' },
   automation: { label: 'Automation', className: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300' },
   mqtt: { label: 'MQTT', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+  ml: { label: 'ML', className: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' },
 }
 
 function SourceBadge({ source }) {

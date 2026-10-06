@@ -1,5 +1,6 @@
 """Request/response models specific to the HTTP API."""
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +27,13 @@ class CommandRequest(BaseModel):
     action: str = Field(min_length=1, max_length=64)
     value: Any = None
     source: CommandSource = CommandSource.FRONTEND
+
+    @field_validator("source")
+    @classmethod
+    def ml_never_commands(cls, value: CommandSource) -> CommandSource:
+        if value is CommandSource.ML:
+            raise ValueError("The ML layer only recommends and detects; it cannot issue device commands.")
+        return value
 
     def to_command(self) -> DeviceCommand:
         return DeviceCommand(action=self.action, value=self.value)
@@ -131,3 +139,27 @@ class RootResponse(BaseModel):
     status: str
     docs: str | None
     api: str
+
+
+class PredictRequest(BaseModel):
+    """Optional overrides; anything omitted is derived from the live HomeState."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{}, {"features": {"temperature_c": 30.4, "occupied": 1}}]},
+    )
+
+    device_id: str = Field(default="fan_living_room", min_length=1, max_length=64)
+    features: dict[str, float | None] | None = None
+
+
+class AnomalyCheckRequest(BaseModel):
+    """A power reading to assess, as a hardware power meter would report it."""
+
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"device_id": "fan_living_room", "power_w": 170}]}
+    )
+
+    device_id: str = Field(min_length=1, max_length=64)
+    power_w: float = Field(ge=0, le=20000, allow_inf_nan=False)
+    timestamp: datetime | None = None

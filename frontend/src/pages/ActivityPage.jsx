@@ -10,6 +10,7 @@ const FILTERS = [
   { id: 'device', label: 'Device events' },
   { id: 'gesture', label: 'Gestures' },
   { id: 'ai', label: 'AI agent' },
+  { id: 'ml', label: 'ML anomalies' },
 ]
 
 /** Full history from the three real activity sources, refreshed with the home poll. */

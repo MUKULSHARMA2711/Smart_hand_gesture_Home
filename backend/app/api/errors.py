@@ -14,6 +14,7 @@ from app.domain.errors import (
     UnsupportedCommandError,
 )
 from app.gestures.errors import GestureActionBlockedError, GestureRejectedError
+from app.ml.errors import InvalidFeatureError, MLUnavailableError, PredictionNotSupportedError
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     DeviceNotFoundError: 404,
@@ -23,6 +24,9 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     IntentNotApplicableError: 400,
     GestureRejectedError: 422,
     GestureActionBlockedError: 403,
+    PredictionNotSupportedError: 400,
+    InvalidFeatureError: 422,
+    MLUnavailableError: 503,
 }
 
 

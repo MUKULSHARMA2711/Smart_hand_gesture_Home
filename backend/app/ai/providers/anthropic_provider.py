@@ -55,7 +55,7 @@ class AnthropicProvider(AIProvider):
 
     async def plan(self, request: PlanningRequest) -> dict[str, Any]:
         messages: list[dict[str, Any]] = [
-            {"role": "user", "content": render_user_prompt(request.message, request.context)}
+            {"role": "user", "content": render_user_prompt(request.message, request.context, request.history)}
         ]
 
         for _ in range(self._max_tool_rounds + 1):

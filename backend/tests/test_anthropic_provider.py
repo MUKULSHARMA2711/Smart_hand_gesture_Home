@@ -64,7 +64,7 @@ async def test_returns_structured_plan_and_strips_null_parameters() -> None:
     assert request["output_config"]["format"]["type"] == "json_schema"
     assert request["fallbacks"] == "default"
     assert {tool["name"] for tool in request["tools"]} == {
-        "get_home_state", "get_device_status", "get_recent_events", "get_energy_usage"
+        "get_home_state", "get_device_status", "get_recent_events", "get_energy_usage", "get_predictions", "get_anomalies"
     }
     assert all(tool["strict"] for tool in request["tools"])
     assert "fan_living_room" in request["messages"][0]["content"]  # home context is in the prompt

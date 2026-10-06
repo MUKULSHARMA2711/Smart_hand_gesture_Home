@@ -49,6 +49,8 @@ export default function SmartHomeScene({
   effects = [],
   compact = false,
   showGestureInput = false,
+  alerts = new Set(),
+  predictions = {},
   reducedMotion = false,
   active = true,
   labelLayer = null,
@@ -93,6 +95,8 @@ export default function SmartHomeScene({
             selected={device.id === selectedId}
             onSelect={onSelect}
             showTag={!compact}
+            alert={alerts.has(device.id)}
+            prediction={predictions[device.id] ?? null}
             reducedMotion={reducedMotion}
           />
         ) : null

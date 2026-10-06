@@ -9,6 +9,7 @@ const TAG_STYLES = {
   DASHBOARD: 'text-slate-300',
   AUTOMATION: 'text-amber-300',
   MQTT: 'text-slate-400',
+  ML: 'text-red-300',
 }
 const TONE_STYLES = { ok: 'text-slate-200', warning: 'text-amber-200', error: 'text-red-300' }
 

@@ -2,6 +2,8 @@ import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useReducedMotion } from 'motion/react'
 import { useAssistantContext, useDisplayDevices } from '../../state/AssistantContext'
 import { useCommandFx } from '../../state/CommandFxContext'
+import { useHomeData } from '../../state/HomeDataContext'
+import { anomalousDeviceIds, predictedDevices } from '../../lib/ml'
 import { FloorPlan2D } from './FloorPlan2D'
 
 // Three.js is only downloaded when a page actually shows the house.
@@ -49,6 +51,9 @@ export function HouseView({ selectedId, onSelect, compact = false, showGestureIn
   const devices = useDisplayDevices()
   const { orbState } = useAssistantContext()
   const { effects } = useCommandFx()
+  const { ml } = useHomeData()
+  const alerts = anomalousDeviceIds(ml.anomalies)
+  const predictions = predictedDevices(ml.prediction)
   const reducedMotion = Boolean(useReducedMotion())
   const container = useRef(null)
   const labelLayer = useRef(null)
@@ -60,6 +65,7 @@ export function HouseView({ selectedId, onSelect, compact = false, showGestureIn
       devices={devices}
       selectedId={selectedId}
       onSelect={onSelect}
+      alerts={alerts}
       reason={webgl ? '3D view failed to start; showing the 2D plan.' : 'WebGL is not available in this browser; showing the 2D plan.'}
     />
   )
@@ -82,6 +88,8 @@ export function HouseView({ selectedId, onSelect, compact = false, showGestureIn
               reducedMotion={reducedMotion}
               active={inView}
               labelLayer={labelLayer}
+              alerts={alerts}
+              predictions={predictions}
             />
           </Suspense>
         </SceneErrorBoundary>

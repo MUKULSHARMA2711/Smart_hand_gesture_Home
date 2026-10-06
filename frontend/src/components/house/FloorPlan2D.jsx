@@ -13,7 +13,7 @@ function tone(device) {
   return device.state?.is_on ? '#38bdf8' : '#475569'
 }
 
-export function FloorPlan2D({ devices, selectedId, onSelect, reason }) {
+export function FloorPlan2D({ devices, selectedId, onSelect, reason, alerts = new Set() }) {
   return (
     <div className="flex h-full flex-col">
       <svg viewBox="0 0 500 360" className="h-full w-full" role="img" aria-label="Floor plan of the home with device states">
@@ -44,6 +44,9 @@ export function FloorPlan2D({ devices, selectedId, onSelect, reason }) {
               className="cursor-pointer"
             >
               {selected && <circle cx={point.x} cy={point.y} r="24" fill="none" stroke="#38bdf8" strokeWidth="2" />}
+              {alerts.has(device.id) && (
+                <circle cx={point.x} cy={point.y} r="29" fill="none" stroke="#f87171" strokeWidth="2" strokeDasharray="4 3" />
+              )}
               <circle cx={point.x} cy={point.y} r="15" fill={tone(device)} opacity="0.9" />
               <text x={point.x} y={point.y + 34} textAnchor="middle" fill="#e2e8f0" fontSize="11">
                 {device.name}

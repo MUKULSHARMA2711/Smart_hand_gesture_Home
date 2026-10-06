@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 from app.ai.agent import HomeAgent
 from app.ai.history import InMemoryAgentHistory
@@ -18,6 +19,7 @@ from app.domain.policy import SecurityPolicy
 from app.events.store import EventStore, InMemoryEventStore
 from app.gestures.history import GestureHistory, InMemoryGestureHistory
 from app.gestures.service import GestureService
+from app.ml.service import MLService, train_models
 from app.sensors.simulated import SimulatedSensorProvider
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ class Container:
     gesture_service: GestureService
     agent: HomeAgent
     agent_history: InMemoryAgentHistory
+    ml_service: MLService | None
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -55,6 +58,19 @@ def build_ai_provider(settings: Settings) -> AIProvider:
     return MockAIProvider()
 
 
+def build_ml_service(settings: Settings, home_state: HomeState, event_store: EventStore) -> MLService | None:
+    if not settings.ml_enabled:
+        return None
+    try:
+        models = train_models(settings.ml_seed, settings.ml_dataset_days, settings.ml_prediction_threshold)
+    except Exception:  # ML is an add-on: never let it take down device control
+        logger.exception("ML models failed to train; ML features are disabled.")
+        return None
+    return MLService(
+        home_state, event_store, models, active_window=timedelta(minutes=settings.ml_anomaly_active_minutes)
+    )
+
+
 def build_container(settings: Settings, *, ai_provider: AIProvider | None = None) -> Container:
     latency_s = settings.virtual_device_latency_ms / 1000
     registry = DeviceRegistry(build_device(config, virtual_latency_s=latency_s) for config in settings.devices)
@@ -73,10 +89,12 @@ def build_container(settings: Settings, *, ai_provider: AIProvider | None = None
         blocked_actions=settings.gesture_blocked_actions,
     )
 
+    ml_service = build_ml_service(settings, home_state, event_store)
+
     agent_history = InMemoryAgentHistory(max_size=settings.ai_history_max_size)
     agent = HomeAgent(
         provider=ai_provider or build_ai_provider(settings),
-        tools=AgentTools(home_state, event_store, command_service),
+        tools=AgentTools(home_state, event_store, command_service, ml_service),
         validator=PlanValidator(registry, resolver, SecurityPolicy(allow_ai_unlock=settings.ai_allow_unlock)),
         history=agent_history,
     )
@@ -90,4 +108,5 @@ def build_container(settings: Settings, *, ai_provider: AIProvider | None = None
         gesture_service=gesture_service,
         agent=agent,
         agent_history=agent_history,
+        ml_service=ml_service,
     )

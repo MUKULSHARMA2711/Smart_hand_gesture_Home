@@ -7,17 +7,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CommandSource(StrEnum):
-    """Who issued a command. Only ``frontend`` is used today."""
+    """Who issued a command or recorded an event."""
 
     FRONTEND = "frontend"
     AUTOMATION = "automation"
     GESTURE = "gesture"
     AI_AGENT = "ai_agent"
     MQTT = "mqtt"
+    ML = "ml"  # observations only (e.g. energy anomalies); ML never issues commands
 
 
 class DeviceEvent(BaseModel):
-    """Audit record of one successful device action."""
+    """Audit record of a device action, or of an observation about a device (``event_type``)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -29,3 +30,5 @@ class DeviceEvent(BaseModel):
     previous_state: dict[str, Any]
     new_state: dict[str, Any]
     source: CommandSource
+    event_type: str = "device_command"  # or "energy_anomaly"
+    details: dict[str, Any] | None = None
