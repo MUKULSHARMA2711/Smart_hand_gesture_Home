@@ -84,7 +84,8 @@ class GestureCommandResponse(BaseModel):
     gesture_event: GestureEvent
     device_event: DeviceEvent | None
     device: DeviceSnapshot
-    # FOUR_FINGERS on a door: the pending unlock to confirm via POST /ai/confirmations/{id}.
+    # A pinch on a door (intent UNLOCK_DOOR): the pending unlock to confirm via
+    # POST /ai/confirmations/{id}.
     confirmation: PendingConfirmation | None = None
 
 

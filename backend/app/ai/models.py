@@ -108,7 +108,7 @@ class PendingConfirmation(BaseModel):
     intent: str
     prompt: str
     request: str  # the user's original words, re-checked by the policy on confirmation
-    source: str = "ai_agent"  # who asked: "ai_agent" (text/voice) or "gesture" (four fingers)
+    source: str = "ai_agent"  # who asked: "ai_agent" (text/voice) or "gesture" (pinch on the door)
     created_at: datetime
     expires_at: datetime
 

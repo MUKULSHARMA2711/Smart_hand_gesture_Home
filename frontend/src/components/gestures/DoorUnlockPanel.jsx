@@ -3,6 +3,7 @@ import { confirmationSecondsLeft } from '../../lib/assistant'
 import { Panel } from '../Panel'
 
 const RESULT = {
+  requesting: { text: 'Requesting unlock confirmation…', tone: 'text-cyan-200' },
   confirming: { text: 'Confirming with the door…', tone: 'text-cyan-200' },
   confirmed: { text: '✓ Unlocked: confirmed by the door', tone: 'text-emerald-300' },
   cancelled: { text: 'Cancelled · the door stays locked', tone: 'text-slate-300' },
@@ -10,7 +11,7 @@ const RESULT = {
   failed: { text: '✗ Not unlocked', tone: 'text-red-300' },
 }
 
-/** Secure gesture unlock: four fingers requests, a pinch confirms, an open palm cancels. */
+/** Secure gesture unlock: a pinch on the door requests, a second pinch confirms, an open palm cancels. */
 export function DoorUnlockPanel({ doorUnlock }) {
   const [now, setNow] = useState(() => Date.now())
   const pending = doorUnlock?.status === 'pending'
@@ -34,7 +35,7 @@ export function DoorUnlockPanel({ doorUnlock }) {
           </p>
           <ul className="mt-2 space-y-1 text-sm text-slate-200">
             <li>
-              <span aria-hidden="true">👌 </span>Pinch to confirm
+              <span aria-hidden="true">👌 </span>Pinch again to confirm
             </li>
             <li>
               <span aria-hidden="true">✋ </span>Open palm to cancel

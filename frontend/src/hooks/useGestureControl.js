@@ -77,10 +77,15 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
     }
   }, [connected, configLoaded, refreshEvents])
 
-  // Secure door unlock: the backend holds the request; a pinch confirms it via the existing API.
+  // Secure door unlock by double pinch: the first pinch on the door asks the backend to hold
+  // an unlock; the second confirms it through the existing confirmation API.
   const unlock = useRef(null)
   if (unlock.current === null) {
     unlock.current = createDoorUnlockController({
+      isDoorSelected: () =>
+        devicesRef.current.find((device) => device.id === selectedIdRef.current)?.device_type === 'door_lock',
+      requestUnlock: (confidence) =>
+        api.sendGesture({ gesture: 'PINCH', intent: 'UNLOCK_DOOR', confidence, targetDeviceId: selectedIdRef.current }),
       decide: (confirmationId, decision) => api.decideConfirmation(confirmationId, decision),
       onChange: setDoorUnlock,
       onSettled: () => Promise.all([refreshEvents(), onDevicesChanged?.()]),
@@ -106,13 +111,7 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       setLastAction({ ...attempt, status: 'pending' })
       try {
         const response = await api.sendGesture({ gesture, intent, confidence, targetDeviceId: targetId })
-        if (response.confirmation) {
-          // FOUR_FINGERS on the door: a pending request only. Nothing has been unlocked.
-          unlock.current.requested(response.confirmation, response.device.name)
-          setLastAction({ ...attempt, status: 'success', action: 'unlock requested · pinch to confirm' })
-        } else {
-          setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
-        }
+        setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
       } catch (error) {
         setLastAction({ ...attempt, status: 'failure', action: null, message: error.message })
       } finally {
@@ -156,7 +155,7 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       },
     })
   }
-  // A pending door unlock takes the pinch (confirm); otherwise it adjusts the fan / AC.
+  // Door selected: pinches request / confirm the unlock. Otherwise they adjust the fan / AC.
   const onPinch = useCallback((event) => {
     if (!unlock.current.pinch(event)) adjuster.current.handle(event)
   }, [])

@@ -21,9 +21,6 @@ class Gesture(StrEnum):
     # Thumb + index pinched, other fingers open: hold and move to adjust, release to apply.
     # Sent once, on release, with the final value.
     PINCH = "PINCH"
-    # Four fingers up, thumb folded: *requests* a door unlock. It never unlocks by itself;
-    # the request must be confirmed (pinch) through the existing confirmation API.
-    FOUR_FINGERS = "FOUR_FINGERS"
     NEUTRAL = "NEUTRAL"  # no hand in view
     UNKNOWN = "UNKNOWN"  # hand in view, no gesture recognised
 
@@ -37,10 +34,17 @@ GESTURE_INTENTS: Mapping[Gesture, Intent] = MappingProxyType(
         Gesture.ONE_FINGER: Intent.SELECT,
         Gesture.TWO_FINGERS: Intent.TOGGLE,
         Gesture.PINCH: Intent.ADJUST,  # fan → set_speed, AC → set_temperature; never a lock
-        Gesture.FOUR_FINGERS: Intent.UNLOCK_DOOR,  # held for confirmation, never executed directly
         Gesture.NEUTRAL: Intent.NONE,
         Gesture.UNKNOWN: Intent.NONE,
     }
+)
+
+
+# A gesture may also carry one of these intents. A pinch on the Main Door *requests* an unlock
+# (UNLOCK_DOOR): it only creates a pending confirmation, confirmed by a second pinch through
+# POST /ai/confirmations/{id}. Nothing is ever unlocked by a gesture directly.
+GESTURE_ALTERNATE_INTENTS: Mapping[Gesture, frozenset[Intent]] = MappingProxyType(
+    {Gesture.PINCH: frozenset({Intent.UNLOCK_DOOR})}
 )
 
 

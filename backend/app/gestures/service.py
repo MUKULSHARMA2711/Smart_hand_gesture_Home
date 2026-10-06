@@ -17,6 +17,7 @@ from app.gestures.errors import (
 )
 from app.gestures.history import GestureHistory
 from app.gestures.models import (
+    GESTURE_ALTERNATE_INTENTS,
     GESTURE_INTENTS,
     GestureCommand,
     GestureCommandResult,
@@ -55,7 +56,7 @@ class GestureService:
         self._request_unlock: Callable[[str], Any] | None = None
 
     def enable_unlock_confirmation(self, request_unlock: Callable[[str], Any]) -> None:
-        """Let FOUR_FINGERS *request* a door unlock, confirmed later via the confirmation API."""
+        """Let a pinch on the door *request* an unlock, confirmed later via the confirmation API."""
         self._request_unlock = request_unlock
 
     @property
@@ -108,7 +109,8 @@ class GestureService:
         expected_intent = GESTURE_INTENTS[command.gesture]
         if expected_intent is Intent.NONE:
             raise GestureNotActionableError(command.gesture)
-        if command.intent is not expected_intent:
+        alternates = GESTURE_ALTERNATE_INTENTS.get(command.gesture, frozenset())
+        if command.intent is not expected_intent and command.intent not in alternates:
             raise GestureIntentMismatchError(command.gesture, command.intent, expected_intent)
         if command.confidence < self._confidence_threshold:
             raise LowConfidenceError(command.confidence, self._confidence_threshold)

@@ -55,17 +55,8 @@ function fingerJoints(name, pose) {
   return joints
 }
 
-// Thumb folded across the palm towards the ring finger, as when showing four fingers.
-const FOLDED_THUMB = [
-  THUMB_CMC,
-  { x: 0.03, y: -0.045, z: -0.018 },
-  { x: 0.01, y: -0.058, z: -0.03 },
-  { x: -0.01, y: -0.07, z: -0.02 },
-]
-
 function thumbJoints(pose) {
   if (pose === 'tucked') return TUCKED_THUMB
-  if (pose === 'folded') return FOLDED_THUMB
   const direction = unit(THUMB_POSES[pose])
   const joints = [THUMB_CMC]
   THUMB_SEGMENTS.forEach((length) => joints.push(add(joints.at(-1), direction, length)))
@@ -81,7 +72,7 @@ function rotate(point, { roll = 0, yaw = 0 }) {
 }
 
 /**
- * @param {{thumb: 'out'|'up'|'down'|'tucked'|'folded', index: string, middle: string, ring: string, pinky: string}} pose
+ * @param {{thumb: 'out'|'up'|'down'|'tucked', index: string, middle: string, ring: string, pinky: string}} pose
  * @param {{roll?: number, yaw?: number}} [rotation]
  */
 export function makeHand(pose, rotation = {}) {
@@ -100,5 +91,4 @@ export const POSES = {
   oneFinger: { thumb: 'tucked', index: 'extended', middle: 'curled', ring: 'curled', pinky: 'curled' },
   twoFingers: { thumb: 'tucked', index: 'extended', middle: 'extended', ring: 'curled', pinky: 'curled' },
   halfClosed: { thumb: 'tucked', index: 'half', middle: 'half', ring: 'half', pinky: 'half' },
-  fourFingers: { thumb: 'folded', index: 'extended', middle: 'extended', ring: 'extended', pinky: 'extended' },
 }

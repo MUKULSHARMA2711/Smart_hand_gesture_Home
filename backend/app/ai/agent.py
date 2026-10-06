@@ -161,7 +161,7 @@ class HomeAgent:
         return pending
 
     def hold_gesture_unlock(self, device_id: str) -> PendingConfirmation | None:
-        """A FOUR_FINGERS gesture asked to unlock: hold it exactly like an explicit AI request.
+        """A first pinch on the door asked to unlock: hold it exactly like an explicit AI request.
 
         Same checks now (device, capability, unlock policy) and again on confirmation, same
         single pending slot (it replaces any other pending request), same expiry. Returns None
@@ -169,7 +169,7 @@ class HomeAgent:
         """
         name = self._tools.home.devices.get(device_id).name
         raw_action = {"device_id": device_id, "intent": "UNLOCK_DOOR", "parameters": {}}
-        request = f"unlock the {name}"  # the deliberate four-finger gesture is the explicit request
+        request = f"unlock the {name}"  # the deliberate pinch on the selected door is the request
         item = self._validator.validate(0, raw_action, request)
         if item.rejected or not item.requires_confirmation:
             logger.info("gesture unlock of %s refused: %s", device_id, item.rejection_code or "no confirmation step")
@@ -178,7 +178,7 @@ class HomeAgent:
         pending = PendingConfirmation(
             device_id=device_id,
             intent="UNLOCK_DOOR",
-            prompt=f"Unlock the {name}? Pinch to confirm, open palm to cancel.",
+            prompt=f"Unlock the {name}? Pinch again to confirm, open palm to cancel.",
             request=request,
             source=CommandSource.GESTURE.value,
             created_at=now,
