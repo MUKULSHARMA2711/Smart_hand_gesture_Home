@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { createAdjustmentController } from '../gestures/adjustment'
 import { createDoorUnlockController } from '../gestures/doorUnlock'
+import { gestureIntent } from '../gestures/gestureIntent'
 import { routePinch } from '../gestures/pinchRouting'
 import { DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_GESTURE_INTENTS } from '../gestures/types'
 
@@ -96,7 +97,8 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
   const execute = useCallback(
     async ({ gesture, confidence }) => {
       if (unlock.current.gesture(gesture)) return
-      const intent = config.intents[gesture]
+      const selected = devicesRef.current.find((device) => device.id === selectedIdRef.current) ?? null
+      const intent = gestureIntent(gesture, selected, config.intents) // fist on the Main Door → LOCK_DOOR
       if (!intent || intent === 'NONE' || inFlight.current) return
 
       let targetId = selectedIdRef.current
@@ -112,7 +114,8 @@ export function useGestureControl({ devices, onDevicesChanged, connected = true 
       setLastAction({ ...attempt, status: 'pending' })
       try {
         const response = await api.sendGesture({ gesture, intent, confidence, targetDeviceId: targetId })
-        setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action })
+        // detail: e.g. "Main Door is already locked." when nothing needed to change.
+        setLastAction({ ...attempt, status: 'success', action: response.gesture_event.action, message: response.gesture_event.detail })
       } catch (error) {
         setLastAction({ ...attempt, status: 'failure', action: null, message: error.message })
       } finally {

@@ -122,13 +122,19 @@ export function createDoorUnlockController({
     },
     /**
      * A committed (stabilised) gesture. Returns true if it was consumed by the unlock flow.
-     * OPEN_PALM cancels a pending unlock (no STOP is sent); any other gesture cancels it and
-     * then runs normally.
+     * OPEN_PALM or FIST cancels a pending unlock and does nothing else (no STOP, no lock in the
+     * same gesture; a new fist afterwards locks); any other gesture cancels it and then runs
+     * normally. A fist while a request or confirmation is in flight is ignored.
      */
     gesture(name) {
+      if (name === 'FIST' && (requesting || confirming)) return true
       if (!pending) return false
       if (name === 'OPEN_PALM') {
         finish('cancel', 'Cancelled with an open palm. The door stays locked.')
+        return true
+      }
+      if (name === 'FIST') {
+        finish('cancel', 'Cancelled with a fist. The door stays locked.')
         return true
       }
       finish('cancel', 'Cancelled: another gesture was used. The door stays locked.')

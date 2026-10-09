@@ -143,7 +143,8 @@ describe('double-pinch secure unlock', () => {
     expect(states.at(-1).status).toBe('cancelled')
   })
 
-  it.each(['THUMBS_UP', 'FIST', 'ONE_FINGER', 'TWO_FINGERS'])('another gesture (%s) cancels, then runs normally', async (gesture) => {
+  // FIST also cancels but is consumed, like OPEN_PALM (see fistLock.test.jsx).
+  it.each(['THUMBS_UP', 'ONE_FINGER', 'TWO_FINGERS'])('another gesture (%s) cancels, then runs normally', async (gesture) => {
     const { unlock, decide } = controller()
     pinch(unlock)
     await flush()

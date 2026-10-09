@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from app.devices.types import DeviceStatus
 from app.domain.command_service import CommandService
 from app.domain.errors import DomainError, IntentNotApplicableError
 from app.domain.home_state import HomeState
@@ -83,6 +84,10 @@ class GestureService:
             action = device_command.action
             if action in self._blocked_actions:
                 raise GestureActionBlockedError(action, device.id)
+            if command.intent is Intent.LOCK_DOOR and _confirmed_locked(device):
+                # A fist on a door the device itself reports as locked: no repeated command or event.
+                event = self._record(command, action, GestureOutcome.ACKNOWLEDGED, detail=f"{device.name} is already locked.")
+                return GestureCommandResult(gesture_event=event, device_event=None)
 
             device_event = await self._commands.execute(device.id, device_command, CommandSource.GESTURE)
         except (GestureRejectedError, IntentNotApplicableError) as exc:
@@ -143,3 +148,9 @@ class GestureService:
             event.gesture, event.intent, event.confidence, event.target_device_id, event.action, event.outcome,
         )
         return event
+
+
+def _confirmed_locked(device: Any) -> bool:
+    """Locked according to the device's own confirmed state. An unreachable or unknown device is
+    never assumed locked, so the lock command is still sent (and fails or succeeds visibly)."""
+    return device.status is DeviceStatus.ONLINE and device.get_state().get("is_locked") is True

@@ -42,9 +42,10 @@ GESTURE_INTENTS: Mapping[Gesture, Intent] = MappingProxyType(
 
 # A gesture may also carry one of these intents. A pinch on the Main Door *requests* an unlock
 # (UNLOCK_DOOR): it only creates a pending confirmation, confirmed by a second pinch through
-# POST /ai/confirmations/{id}. Nothing is ever unlocked by a gesture directly.
+# POST /ai/confirmations/{id}. Nothing is ever unlocked by a gesture directly. A fist on the Main
+# Door locks it (LOCK_DOOR needs the LOCK capability, so it never applies to other devices).
 GESTURE_ALTERNATE_INTENTS: Mapping[Gesture, frozenset[Intent]] = MappingProxyType(
-    {Gesture.PINCH: frozenset({Intent.UNLOCK_DOOR})}
+    {Gesture.PINCH: frozenset({Intent.UNLOCK_DOOR}), Gesture.FIST: frozenset({Intent.LOCK_DOOR})}
 )
 
 

@@ -9,10 +9,10 @@ const GUIDE = [
   { gesture: 'PINCH', symbol: '👌', pose: 'Pinch thumb and index (other fingers open), move up/down, release · on Main Door: pinch twice to unlock' },
 ]
 
-// Gestures only control powered devices; door locks need an explicit lock/unlock request.
+// On the Main Door a fist locks it, and only a confirmed double pinch unlocks it.
 const INTENT_EFFECTS = {
   TURN_ON: 'Turn on',
-  TURN_OFF: 'Turn off',
+  TURN_OFF: 'Turn off · Main Door: lock',
   STOP: 'Stop: turn off',
   SELECT: 'Next device',
   TOGGLE: 'Flip on/off',

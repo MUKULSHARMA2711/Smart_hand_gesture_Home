@@ -20,12 +20,15 @@ export function LastActionPanel({ lastAction, deviceNames }) {
       <div aria-live="polite">
         {status === 'pending' && <p className="text-lg font-semibold">{deviceName} → …</p>}
         {status === 'success' && (
-          <p className="flex flex-wrap items-baseline gap-x-2 text-lg font-semibold">
-            <span>
-              {deviceName} → {actionLabel(action)}
-            </span>
-            <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">✓ Succeeded</span>
-          </p>
+          <>
+            <p className="flex flex-wrap items-baseline gap-x-2 text-lg font-semibold">
+              <span>
+                {deviceName} → {actionLabel(action)}
+              </span>
+              <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">✓ Succeeded</span>
+            </p>
+            {message && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{message}</p>}
+          </>
         )}
         {status === 'failure' && (
           <>
