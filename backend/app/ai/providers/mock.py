@@ -14,7 +14,7 @@ from app.ai.context import DeviceContext, HomeContext
 from app.ai.providers.base import AIProvider, PlanningRequest
 from app.devices.types import Capability, DeviceType
 from app.domain.intents import INTENT_CAPABILITIES, Intent
-from app.domain.policy import explicitly_requests
+from app.domain.policy import asks_about_lock_state, explicitly_requests
 
 _TYPE_WORDS: dict[DeviceType, tuple[str, ...]] = {
     DeviceType.LIGHT: ("light", "lights", "lamp", "lamps"),
@@ -44,6 +44,7 @@ _HISTORY = re.compile(r"\b(history|recent(ly)?|happened|events?|activity|log)\b"
 _STATUS = re.compile(r"\b(status|happening|state|overview|summary|how is|how's|what's on|is the|are the|which)\b|\?")
 _UNLOCK = re.compile(r"\bunlock")
 _DECLINED_UNLOCK, _DECLINED_LOCK = "DECLINED_UNLOCK", "DECLINED_LOCK"  # negated door requests
+_DOOR_QUESTION = "DOOR_QUESTION"  # "is the door locked?": answered, never acted on
 _LOCK = re.compile(r"\block")
 _OFF = re.compile(r"\b(off|shut|stop)\b")
 _ON = re.compile(r"\b(on|start)\b")
@@ -104,13 +105,18 @@ class _Planner:
             return self._anomaly_query()
         if _ADVICE_Q.search(text):
             return self._prediction_query()
-        has_control = bool(_CONTROL.search(text))
+        controls = {match.group() for match in _CONTROL.finditer(text)}
+        door_question = asks_about_lock_state(text)
+        # "did you lock the door?" mentions "lock" but asks a question: only other verbs count then.
+        has_control = bool(controls - {"lock", "unlock"}) if door_question else bool(controls)
         leaving = bool(_LEAVING.search(text))
 
         if not has_control and not leaving:
             query = self._query(text)
             if query is not None:
                 return query
+            if door_question:
+                return self._door_status(text)
 
         notes: list[str] = []
         planned = (self._leaving_actions() if leaving else []) + self._clause_actions(text, notes)
@@ -214,6 +220,13 @@ class _Planner:
             return {"message": self._status_summary(), "actions": [{"intent": Intent.GET_STATUS, "parameters": {}}]}
         return None
 
+    def _door_status(self, text: str) -> dict[str, Any]:
+        doors = [d for d in self._explicit_targets(text) or self.devices if d.type is DeviceType.DOOR_LOCK]
+        return {
+            "message": " ".join(f"The {d.name} is {describe_state(d)}." for d in doors) or self._status_summary(),
+            "actions": [{"device_id": d.id, "intent": Intent.GET_STATUS, "parameters": {}} for d in doors],
+        }
+
     def _status_summary(self) -> str:
         env = self.context.environment
         devices = _join([f"the {d.name} is {describe_state(d)}" for d in self.devices])
@@ -283,6 +296,11 @@ class _Planner:
                 intent = last_intent  # "turn on the light and [the] fan"
             if intent is None:
                 continue
+            if intent == _DOOR_QUESTION:
+                doors = [d for d in explicit or self.devices if d.type is DeviceType.DOOR_LOCK]
+                notes.extend(f"The {d.name} is {describe_state(d)}." for d in doors)
+                last_targets, last_intent = explicit or last_targets, None
+                continue
             if intent in (_DECLINED_UNLOCK, _DECLINED_LOCK):
                 doors = [d for d in explicit or self.devices if d.type is DeviceType.DOOR_LOCK]
                 verb = "unlock" if intent == _DECLINED_UNLOCK else "lock"
@@ -319,11 +337,18 @@ class _Planner:
         return actions
 
     def _clause_intent(self, clause: str) -> tuple[Intent | str | None, int | None]:
-        # Same negation rule as the security policy: "don't unlock the door" is not a request.
-        if _UNLOCK.search(clause):
-            return (Intent.UNLOCK_DOOR if explicitly_requests(clause, Capability.UNLOCK) else _DECLINED_UNLOCK), None
-        if _LOCK.search(clause):
-            return (Intent.LOCK_DOOR if explicitly_requests(clause, Capability.LOCK) else _DECLINED_LOCK), None
+        # Same negation and question rules as the security policy: "don't unlock the door" and
+        # "is the door locked?" are not requests. The intent is what the clause *requests*, not the
+        # first door word in it: "lock the door if it's unlocked" locks and never becomes an unlock.
+        mentions_unlock, mentions_lock = _UNLOCK.search(clause), _LOCK.search(clause)
+        if mentions_unlock or mentions_lock:
+            if asks_about_lock_state(clause):
+                return _DOOR_QUESTION, None
+            if explicitly_requests(clause, Capability.UNLOCK):
+                return Intent.UNLOCK_DOOR, None
+            if explicitly_requests(clause, Capability.LOCK):
+                return Intent.LOCK_DOOR, None
+            return (_DECLINED_UNLOCK if mentions_unlock else _DECLINED_LOCK), None
         number = _NUMBER.search(clause)
         if number and (_SETTING.search(clause) or any(p.search(clause) for p, _ in _VALUE_KEYWORDS)):
             return "SET", int(number.group())

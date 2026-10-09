@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { doorVisual } from '../../components/3d/visualState'
 import { spokenSummary, voiceStatusLabel } from '../../lib/assistant'
 import { createVoiceSession, normalizeTranscript, speakText, splitWake } from '../voiceSession'
 
@@ -400,6 +401,31 @@ describe('speech output', () => {
     expect(spokenSummary({ ...base, confirmation: { prompt: 'Are you sure?' } })).toBe('Are you sure?')
     expect(spokenSummary(null)).toMatch(/couldn't reach/)
     expect(spokenSummary({ ...base, reply: 'It is 26 °C.', actions: [{ intent: 'GET_STATUS', status: 'answered' }] })).toBe('It is 26 °C.')
+  })
+
+  it('"Hey Nova, lock the main door": sends only the request, speaks the backend result, no confirmation', async () => {
+    const names = { door_main: 'Main Door' }
+    // What POST /ai/command returns once the lock ran through CommandService.
+    const response = {
+      plan_valid: true,
+      reply: "The Main Door is currently unlocked. I'll lock it.",
+      confirmation: null,
+      actions: [
+        { device_id: 'door_main', intent: 'LOCK_DOOR', status: 'executed', new_state: { is_locked: true } },
+      ],
+    }
+    const { voice, commands, spoken, states } = session({
+      reply: { speech: spokenSummary(response, names), expectsReply: Boolean(response.confirmation) },
+    })
+    voice.start()
+    current().say('Hey Nova, lock the main door.')
+    await flush()
+
+    expect(commands).toEqual(['lock the main door.'])
+    expect(spoken).toEqual(['Done. Main Door is now locked.'])
+    expect(states.at(-1)).toBe('wake') // locking asks for no confirmation
+    // The 3D door is drawn from the backend-confirmed state in the response.
+    expect(doorVisual(response.actions[0].new_state)).toMatchObject({ locked: true, angle: 0, label: 'LOCKED' })
   })
 
   it('status line follows the real request', () => {

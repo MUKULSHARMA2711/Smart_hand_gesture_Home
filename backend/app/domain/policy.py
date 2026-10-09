@@ -3,8 +3,8 @@
 Security-sensitive capabilities (door LOCK / UNLOCK) are treated differently from
 ordinary appliance control. For the AI agent, a door action is only allowed when the
 user's *own words* explicitly ask for it — checked here in code, independently of the
-LLM, so an indirect request ("I'm leaving home") or a mistaken/manipulated plan can
-never lock or unlock the door.
+LLM, so an indirect request ("I'm leaving home"), a question ("is the door locked?") or a
+mistaken/manipulated plan can never lock or unlock the door.
 
 An explicitly requested unlock is additionally held for confirmation (``requires_confirmation``):
 the agent asks "Are you sure?" and only executes after an explicit confirmation.
@@ -30,16 +30,39 @@ _NEGATION = re.compile(
     r"mustn'?t|must not|won'?t|will not|can'?t|cannot|without|avoid|stop)\b"
 )
 _CLAUSE_BREAK = re.compile(r"[.,;:!?]|\b(?:and|but|then|so|also)\b")
+# A question about the door is not a request to change it either: "is the door locked?",
+# "did you lock the door?", "check if the door is locked". Polite requests ("can you lock the
+# door?") still count.
+_QUESTION = re.compile(
+    r"\s*(?:is|are|was|were|am|do|does|did|has|have|had|isn'?t|aren'?t|wasn'?t|weren'?t|hasn'?t|haven'?t)\b"
+)
+_CONDITION = re.compile(r"\b(?:if|whether)\b")
+
+
+def _mentions(utterance: str, capability: Capability) -> list[str]:
+    """How each lock/unlock mention is used, in order: "request", "negated" or "question"."""
+    text = utterance.lower().replace("’", "'")
+    kinds = []
+    for match in _EXPLICIT_WORDING[capability].finditer(text):
+        clause_start = max((m.end() for m in _CLAUSE_BREAK.finditer(text, 0, match.start())), default=0)
+        if _NEGATION.search(text, clause_start, match.start()):
+            kinds.append("negated")
+        elif _QUESTION.match(text, clause_start) or _CONDITION.search(text, clause_start, match.start()):
+            kinds.append("question")
+        else:
+            kinds.append("request")
+    return kinds
 
 
 def explicitly_requests(utterance: str, capability: Capability) -> bool:
-    """True if the utterance contains a non-negated request for ``capability``."""
-    text = utterance.lower().replace("’", "'")
-    for match in _EXPLICIT_WORDING[capability].finditer(text):
-        clause_start = max((m.end() for m in _CLAUSE_BREAK.finditer(text, 0, match.start())), default=0)
-        if not _NEGATION.search(text, clause_start, match.start()):
-            return True
-    return False
+    """True if the utterance contains a non-negated request (not a question) for ``capability``."""
+    return "request" in _mentions(utterance, capability)
+
+
+def asks_about_lock_state(utterance: str) -> bool:
+    """True for a question about a door's lock state that asks for no lock or unlock."""
+    kinds = _mentions(utterance, Capability.LOCK) + _mentions(utterance, Capability.UNLOCK)
+    return "question" in kinds and "request" not in kinds
 
 
 @dataclass(frozen=True)
